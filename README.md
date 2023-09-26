@@ -6,6 +6,8 @@ Digitization Program Office, OCIO, Smithsonian.
 
 ![DPO Logo](https://github.com/Smithsonian/Osprey_Worker/assets/2302171/c45ba5d7-450f-4a06-84fd-6c2551dd21b8)
 
+https://dpo.si.edu/
+
 This repo contains the command line program `osprey_worker` that runs the checks on
 the files from digitization projects. The program communicates with 
 the Dashboard via an API.

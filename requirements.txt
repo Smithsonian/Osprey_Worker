@@ -1,0 +1,4 @@
+xmltodict
+pandas
+Pillow
+requests

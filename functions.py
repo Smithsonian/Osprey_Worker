@@ -166,7 +166,7 @@ def pil_validate(file_id, filename, logger):
     return check_results, check_info
 
 
-def check_sequence(filename, folder_info, sequence, sequence_split, logger):
+def check_sequence(filename, folder_info, sequence, sequence_split):
     filename_stem = Path(filename).stem
     for file in folder_info['files']:
         if file['file_name'] == filename_stem:
@@ -200,15 +200,14 @@ def check_sequence(filename, folder_info, sequence, sequence_split, logger):
     return (file_id, check_results, check_info)
 
 
-def sequence_validate(filename, folder_info, logger):
+def sequence_validate(filename, folder_info):
     """
     Validate that a suffix sequence is not missing items
     """
     sequence = settings.sequence
     sequence_split = settings.sequence_split
-    file_id, check_results, check_info = check_sequence(filename, folder_info, sequence, sequence_split, logger)
+    file_id, check_results, check_info = check_sequence(filename, folder_info, sequence, sequence_split)
     file_check = 'sequence'
-    logger.info("SEQ: results - {} - {}".format(check_results, check_info))
     payload = {'type': 'file',
                'property': 'filechecks',
                'folder_id': folder_info['folder_id'],
@@ -221,10 +220,10 @@ def sequence_validate(filename, folder_info, logger):
     r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias), data=payload)
     query_results = json.loads(r.text.encode('utf-8'))
     if query_results["result"] is not True:
-        logger.error("API Returned Error: {}".format(query_results))
-        logger.error("Request: {}".format(str(r.request)))
-        logger.error("Headers: {}".format(r.headers))
-        logger.error("Payload: {}".format(payload))
+        # logger.error("API Returned Error: {}".format(query_results))
+        # logger.error("Request: {}".format(str(r.request)))
+        # logger.error("Headers: {}".format(r.headers))
+        # logger.error("Payload: {}".format(payload))
         return False
     return True
 
@@ -409,7 +408,7 @@ def check_md5(md5_file, files):
         pool.close()
         pool.join()
     if sum(bad_files) > 0:
-        return 1, "{} MD5 Errors".format(sum(bad_files))
+        return 1, "{} Files Don't Match MD5 File".format(sum(bad_files))
     else:
         return 0, 0
 
@@ -788,14 +787,14 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
             logger.info(print_str)
             # Process files in parallel
             for file in files:
-                sequence_validate(file, folder_info, logger)
+                sequence_validate(file, folder_info)
         else:
             print_str = "Started parallel run of {notasks} tasks on {workers} workers for 'sequence'"
             print_str = print_str.format(notasks=str(locale.format_string("%d", no_tasks, grouping=True)), workers=str(
                 settings.no_workers))
             logger.info(print_str)
             # Process files in parallel
-            inputs = zip(files, itertools.repeat(folder_info), itertools.repeat(logger))
+            inputs = zip(files, itertools.repeat(folder_info))
             with Pool(settings.no_workers) as pool:
                 pool.starmap(sequence_validate, inputs)
                 pool.close()

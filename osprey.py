@@ -19,7 +19,7 @@ import settings
 # Import helper functions
 from functions import *
 
-ver = "2.6.1"
+ver = "2.6.2"
 
 # Pass an argument in the CLI 'debug'
 if len(sys.argv) > 1:

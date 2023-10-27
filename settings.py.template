@@ -55,7 +55,6 @@ filename_pattern_query = "SELECT COUNT(*) as no_records FROM (SELECT file_name F
 
 # How long to sleep between loops
 # Set to False to run only once
-# sleep = False
 sleep = 180
 
 

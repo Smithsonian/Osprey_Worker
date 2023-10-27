@@ -12,7 +12,6 @@ from random import randint
 
 import glob
 from PIL import Image
-# from subprocess import PIPE
 from pathlib import Path
 import shutil
 import locale

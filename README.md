@@ -17,8 +17,8 @@ https://github.com/Smithsonian/Osprey
 
 ## Requirements
 
-The program requires a modern version of Linux and Python 3.7 or newer. It has been used with Ubuntu 23,
-RHEL 8, and CentOS 7.
+The program requires a modern version of Linux and Python 3.7 or newer. It has been used with Ubuntu 23 and 
+RHEL 8. A server running [Osprey](https://github.com/Smithsonian/Osprey) is also required to write the data to.
 
 To install the Python requirements, use pip:
 

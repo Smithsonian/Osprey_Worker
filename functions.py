@@ -1,4 +1,4 @@
-# Functions for osprey.py
+# Functions for osprey_worker.py
 from datetime import datetime
 import os
 import stat
@@ -92,10 +92,22 @@ def jhove_validate(file_path, logger):
         with open(xml_file) as fd:
             doc = xmltodict.parse(fd.read())
     except Exception as e:
-        error_msg = "Could not find result file from JHOVE ({}) ({}) | {} - {}".format(xml_file, e, out, err)
-        check_results = 1
-        check_info = error_msg
-        return check_results, check_info
+        # Try again
+        if os.path.isfile(xml_file):
+            os.unlink(xml_file)
+        p = subprocess.Popen([settings.jhove, "-m", jhove_module, "-h", "xml", "-o", xml_file, file_path],
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE)
+        (out, err) = p.communicate()
+        # Open and read the results xml
+        try:
+            with open(xml_file) as fd:
+                doc = xmltodict.parse(fd.read())
+        except Exception as e:
+            error_msg = "Could not find result file from JHOVE ({}) ({}) | {} - {}".format(xml_file, e, out, err)
+            check_results = 1
+            check_info = error_msg
+            return check_results, check_info
     if os.path.isfile(xml_file):
         os.unlink(xml_file)
     # Get file status
@@ -821,7 +833,6 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
                         format='%(levelname)s | %(asctime)s | %(filename)s:%(lineno)s | %(message)s',
                         datefmt='%y-%b-%d %H:%M:%S')
     logger = logging.getLogger("osprey_{}".format(random_int))
-    # main_file_path = "{}/{}/{}".format(folder_path, settings.main_files_path, filename)
     main_file_path = filename
     logger.info("filename: {}".format(main_file_path))
     folder_id = int(folder_id)

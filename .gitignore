@@ -163,3 +163,5 @@ settings.py
 .idea
 
 .vs
+
+*.code-workspace

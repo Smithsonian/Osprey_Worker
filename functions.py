@@ -1074,7 +1074,7 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
                    'api_key': settings.api_key,
                    'file_check': file_check,
                    'value': check_results,
-                   'check_info': check_info
+                   'check_info': check_info.replace(settings.project_datastorage, "")
                    }
         r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
                           data=payload)
@@ -1123,7 +1123,7 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
                    'api_key': settings.api_key,
                    'file_check': file_check,
                    'value': check_results,
-                   'check_info': check_info
+                   'check_info': check_info.replace(settings.project_datastorage, "")
                    }
         r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
                           data=payload)

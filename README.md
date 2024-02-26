@@ -12,8 +12,10 @@ This repo contains the command line program `osprey_worker` that runs the checks
 the files from digitization projects. The program communicates with 
 the Dashboard via an API.
 
-The code for the Osprey Dashboard is in the repo
-https://github.com/Smithsonian/Osprey
+Related repos:
+
+ * https://github.com/Smithsonian/Osprey - Osprey Dashboard 
+ * https://github.com/Smithsonian/Osprey_Worker/
 
 ## Requirements
 

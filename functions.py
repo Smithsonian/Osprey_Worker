@@ -630,40 +630,19 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
             logger.error("Payload: {}".format(payload))
             sys.exit(1)
     # Check if MD5 exists in raw folder
-    if len(glob.glob(folder_path + "/" + settings.raw_files_path + "/*.md5")) == 1:
-        md5_raw_exists = 0
-    else:
-        md5_raw_exists = 1
-    payload = {'type': 'folder',
-               'folder_id': folder_id,
-               'api_key': settings.api_key,
-               'property': 'raw_md5_exists',
-               'value': md5_raw_exists
-               }
-    r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
-                      data=payload)
-    query_results = json.loads(r.text.encode('utf-8'))
-    if query_results["result"] is not True:
-        logger.error("API Returned Error: {}".format(query_results))
-        logger.error("Request: {}".format(str(r.request)))
-        logger.error("Headers: {}".format(r.headers))
-        logger.error("Payload: {}".format(payload))
-        sys.exit(1)
-    # Check if the MD5 file of RAWS matches the contents of the folder
-    if md5_raw_exists == 0:
-        md5_check, md5_error = validate_md5(folder_path + "/" + settings.raw_files_path)
-        if md5_check == 0:
-            property = 'raw_md5_matches_ok'
+    if 'raw_pair' in project_checks:
+        if len(glob.glob(folder_path + "/" + settings.raw_files_path + "/*.md5")) == 1:
+            md5_raw_exists = 0
         else:
-            property = 'raw_md5_matches_error'
+            md5_raw_exists = 1
         payload = {'type': 'folder',
-                   'folder_id': folder_id,
-                   'api_key': settings.api_key,
-                   'property': property,
-                   'value': md5_error
-                   }
+                'folder_id': folder_id,
+                'api_key': settings.api_key,
+                'property': 'raw_md5_exists',
+                'value': md5_raw_exists
+                }
         r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
-                          data=payload)
+                        data=payload)
         query_results = json.loads(r.text.encode('utf-8'))
         if query_results["result"] is not True:
             logger.error("API Returned Error: {}".format(query_results))
@@ -671,6 +650,30 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
             logger.error("Headers: {}".format(r.headers))
             logger.error("Payload: {}".format(payload))
             sys.exit(1)
+        # Check if the MD5 file of RAWS matches the contents of the folder
+        if md5_raw_exists == 0:
+            md5_check, md5_error = validate_md5(folder_path + "/" + settings.raw_files_path)
+            if md5_check == 0:
+                property = 'raw_md5_matches_ok'
+            else:
+                property = 'raw_md5_matches_error'
+            payload = {'type': 'folder',
+                    'folder_id': folder_id,
+                    'api_key': settings.api_key,
+                    'property': property,
+                    'value': md5_error
+                    }
+            r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
+                            data=payload)
+            query_results = json.loads(r.text.encode('utf-8'))
+            if query_results["result"] is not True:
+                logger.error("API Returned Error: {}".format(query_results))
+                logger.error("Request: {}".format(str(r.request)))
+                logger.error("Headers: {}".format(r.headers))
+                logger.error("Payload: {}".format(payload))
+                sys.exit(1)
+    else:
+        md5_raw_exists = 0
     if settings.md5_required:
         if md5_exists == 1 or md5_raw_exists == 1:
             # Folder is missing md5 files
@@ -876,7 +879,8 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
                 'type': "file",
                 'folder_id': folder_id,
                 'filename': filename_stem,
-                'timestamp': file_timestamp
+                'timestamp': file_timestamp,
+                'filetype': filename_suffix.lower(),
                 }
         r = requests.post('{}/api/new/{}'.format(settings.api_url, settings.project_alias), data=payload)
         if r.status_code != 200:

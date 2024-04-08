@@ -19,7 +19,7 @@ import settings
 # Import helper functions
 from functions import *
 
-ver = "2.7.1"
+ver = "2.7.2"
 
 # Pass an argument in the CLI 'debug'
 if len(sys.argv) > 1:
@@ -93,6 +93,18 @@ def main():
         logger.error("API Returned Error: {}".format(query_results))
         sys.exit(1)
     project_info = json.loads(r.text.encode('utf-8'))
+    # Reset folders under verification and other pending tasks
+    payload = {'type': 'startup',
+                   'property': 'startup',
+                   'api_key': settings.api_key,
+                   'value': True
+                   }
+    r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias), data=payload)
+    if r.status_code != 200:
+        # Something went wrong
+        query_results = r.text.encode('utf-8')
+        logger.error("API Returned Error: {}".format(query_results))
+        sys.exit(1)
     # Generate list of folders in the path
     folders = []
     for entry in os.scandir(settings.project_datastorage):

@@ -118,13 +118,19 @@ def jhove_validate(file_path, logger):
         check_info = jhove_results
     else:
         check_results = 1
-        if len(doc['jhove']['repInfo']['messages']) == 1:
+        if len(doc['jhove']['repInfo']['messages']['message']) > 0:
             # If the only error is with the WhiteBalance, ignore
             # Issue open at Github, seems will be fixed in future release
             # https://github.com/openpreserve/jhove/issues/364
-            if doc['jhove']['repInfo']['messages']['message']['#text'][:31] == "WhiteBalance value out of range":
+            if len(doc['jhove']['repInfo']['messages']['message']) == 1 and doc['jhove']['repInfo']['messages']['message'][0]['#text'][:31] == "WhiteBalance value out of range":
                 check_results = 0
-        file_status = doc['jhove']['repInfo']['messages']['message']['#text']
+                file_status = doc['jhove']['repInfo']['messages']['message'][0]['#text']
+            else:
+                check_results = 1
+                f_stat = []
+                for msg in doc['jhove']['repInfo']['messages']['message']:
+                    f_stat.append(msg['#text'])
+                file_status = ", ".join(f_stat)
         check_info = "{}; {}".format(file_status, jhove_results)
     return check_results, check_info
 

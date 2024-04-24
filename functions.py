@@ -124,7 +124,7 @@ def jhove_validate(file_path, logger):
             # https://github.com/openpreserve/jhove/issues/364
             if len(doc['jhove']['repInfo']['messages']) == 1 and doc['jhove']['repInfo']['messages']['message']['#text'][:31] == "WhiteBalance value out of range":
                 check_results = 0
-                file_status = doc['jhove']['repInfo']['messages']['message'][0]['#text']
+                file_status = doc['jhove']['repInfo']['messages']['message']['#text']
             else:
                 check_results = 1
                 f_stat = []

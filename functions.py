@@ -1095,6 +1095,26 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
             logger.error("Headers: {}".format(r.headers))
             logger.error("Payload: {}".format(payload))
             return False
+    if 'filename' in project_checks:
+        file_check = 'filename'
+        payload = {'type': 'file',
+                   'property': 'filechecks',
+                   'folder_id': folder_id,
+                   'file_id': file_id,
+                   'api_key': settings.api_key,
+                   'file_check': file_check,
+                   'value': check_results,
+                   'check_info': check_info.replace(settings.project_datastorage, "")
+                   }
+        r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
+                          data=payload)
+        query_results = json.loads(r.text.encode('utf-8'))
+        if query_results["result"] is not True:
+            logger.error("API Returned Error: {}".format(query_results))
+            logger.error("Request: {}".format(str(r.request)))
+            logger.error("Headers: {}".format(r.headers))
+            logger.error("Payload: {}".format(payload))
+            return False
     if 'tifpages' in project_checks:
         file_check = 'tifpages'
         logger.info("tifpages_pre: {} {}".format(file_id, main_file_path))

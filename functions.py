@@ -185,6 +185,7 @@ def pil_validate(file_id, filename, logger):
 
 def check_sequence(filename, folder_info, sequence, sequence_split):
     filename_stem = Path(filename).stem
+    file_id = None
     for file in folder_info['files']:
         if file['file_name'] == filename_stem:
             file_id = file['file_id']
@@ -192,7 +193,9 @@ def check_sequence(filename, folder_info, sequence, sequence_split):
             break
     if file_id is None:
         # Something is wrong
-        sys.exit(8)
+        check_results = 1
+        check_info = "file_id not found for {}".format(filename)
+        return (file_id, check_results, check_info)
     file_suffix = filename_stem.split(sequence_split)
     file_wo_suffix = file_suffix[0:len(file_suffix) - 1]
     file_wo_suffix = '_'.join(file_wo_suffix)

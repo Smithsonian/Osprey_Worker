@@ -104,6 +104,7 @@ def main():
     project_info = json.loads(r.text.encode('utf-8'))
     # Reset folders under verification and other pending tasks
     if worker_set == 0 or worker_set is None:
+        logger.info("Clearing project in database")
         payload = {'type': 'startup',
                    'property': 'startup',
                    'api_key': settings.api_key,
@@ -117,7 +118,8 @@ def main():
             sys.exit(1)
     else:
         # Wait 30 seconds for first
-        time.sleep(30)
+        logger.info("Waiting for project to clear in database")
+        time.sleep(20)
     # Generate list of folders in the path
     folders = []
     for entry in os.scandir(settings.project_datastorage):

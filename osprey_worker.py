@@ -47,7 +47,10 @@ if not os.path.exists(log_folder):
 
 # Logging
 current_time = time.strftime("%Y%m%d_%H%M%S", time.localtime())
-logfile = '{}/{}_{}.log'.format(log_folder, settings.project_alias, current_time)
+if worker_set != None:
+    logfile = '{}/{}_w{}_{}.log'.format(log_folder, settings.project_alias, worker_set, current_time)
+else:
+    logfile = '{}/{}_{}.log'.format(log_folder, settings.project_alias, current_time)
 logging.basicConfig(filename=logfile, filemode='a', level=logging.DEBUG,
                     format='%(levelname)s | %(asctime)s | %(filename)s:%(lineno)s | %(message)s',
                     datefmt='%y-%b-%d %H:%M:%S')
@@ -140,6 +143,8 @@ def main():
         return True
     # Check each folder
     logger.info("project_info: {}".format(project_info))
+    for folder in folders:
+        print(entry)
     for folder in folders:
         run_checks_folder_p(project_info, folder, log_folder, logger)
     return True

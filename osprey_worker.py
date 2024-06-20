@@ -130,7 +130,7 @@ def main():
     folders.sort()
     if worker_set != None:
         # Break for sets
-        folders_sets = np.array_split(folders, no_sets)
+        folders_sets = np.array_split(folders, int(no_sets))
         folders = folders_sets[worker_set].tolist()
     # No folders found
     if len(folders) == 0:

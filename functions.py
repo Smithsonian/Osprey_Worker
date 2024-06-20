@@ -1188,3 +1188,6 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
             logger.error("Payload: {}".format(payload))
             return False
     return True
+
+
+

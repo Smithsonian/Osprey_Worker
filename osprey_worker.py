@@ -12,6 +12,7 @@ import logging
 import os
 import time
 import requests
+import numpy as np
 
 # Import settings from settings.py file
 import settings
@@ -19,13 +20,21 @@ import settings
 # Import helper functions
 from functions import *
 
-ver = "2.7.7"
+ver = "2.7.8"
 
 # Pass an argument in the CLI 'debug'
-if len(sys.argv) > 1:
+if len(sys.argv) == 4:
     run_debug = sys.argv[1]
+    worker_set = sys.argv[2]
+    no_sets = sys.argv[3]
+elif len(sys.argv) == 2:
+    run_debug = sys.argv[1]
+    worker_set = None
+    no_sets = None
 else:
     run_debug = False
+    worker_set = None
+    no_sets = None
 
 
 ############################################
@@ -94,11 +103,15 @@ def main():
         sys.exit(1)
     project_info = json.loads(r.text.encode('utf-8'))
     # Reset folders under verification and other pending tasks
-    payload = {'type': 'startup',
+    if worker_set == 0 or worker_set is None:
+        payload = {'type': 'startup',
                    'property': 'startup',
                    'api_key': settings.api_key,
                    'value': True
                    }
+    else:
+        # Wait 30 seconds for first
+        time.sleep(30)
     r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias), data=payload)
     if r.status_code != 200:
         # Something went wrong
@@ -114,6 +127,11 @@ def main():
         else:
             logger.error("Extraneous files in: {}".format(entry.path))
             sys.exit(1)
+    folders.sort()
+    if worker_set != None:
+        # Break for sets
+        folders_sets = np.array_split(folders, no_sets)
+        folders = folders_sets[worker_set].tolist()
     # No folders found
     if len(folders) == 0:
         logger.info("No folders found in: {}".format(settings.project_datastorage))

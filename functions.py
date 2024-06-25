@@ -354,10 +354,10 @@ def jpgpreview(file_id, folder_id, file_path, logger):
         resized_preview_file_path = "{}/{}".format(preview_file_path, width)
         os.makedirs(resized_preview_file_path, exist_ok=True)
     # Check if preview exist
-    if os.path.isfile(preview_image) and os.path.isfile(preview_image_1200) and \
-        os.path.isfile(preview_image_160) and os.path.isfile(preview_image_600):
-        logger.info("Preview images of {} exist".format(file_id))
-        return True
+    # if os.path.isfile(preview_image) and os.path.isfile(preview_image_1200) and \
+    #     os.path.isfile(preview_image_160) and os.path.isfile(preview_image_600):
+    #     logger.info("Preview images of {} exist".format(file_id))
+    #     return True
     img = Image.open(file_path)
     # if settings.previews_size == "full":
     # Save full size by default
@@ -528,7 +528,7 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
                           data=payload)
         query_results = json.loads(r.text.encode('utf-8'))
         logger.info("Creating folder record: {} - {} - {}".format(folder_path, payload, query_results))
-        if query_results["result"] is False:
+        if query_results["result"] == "error":
             logger.error("API Returned Error: {}".format(query_results))
             logger.error("Request: {}".format(str(r.request)))
             logger.error("Headers: {}".format(r.headers))

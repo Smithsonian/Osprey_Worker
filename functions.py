@@ -361,18 +361,19 @@ def jpgpreview(file_id, folder_id, file_path, logger):
     img = Image.open(file_path)
     # if settings.previews_size == "full":
     # Save full size by default
-    img.save(preview_image, 'jpeg', icc_profile=img.info.get('icc_profile'))
+    original_profile = img.info.get("icc_profile")
+    img.save(preview_image, 'jpeg', icc_profile=original_profile, quality=100, optimize=True)
     if os.path.isfile(preview_image) is False:
         logger.error("File:{}|msg:{}".format(file_path))
         sys.exit(1)
+    img = Image.open(file_path)
     # 160
     width = 160
-    img = Image.open(file_path)
     width_o, height_o = img.size
     height = round(height_o * (width / width_o))
     newsize = (width, height)
     im1 = img.resize(newsize)
-    im1.save(preview_image_160, 'jpeg', icc_profile=img.info.get('icc_profile'))
+    im1.save(preview_image_160, 'jpeg', icc_profile=original_profile, quality=100, optimize=True)
     if os.path.isfile(preview_image_160) is False:
         logger.error("File:{}|msg:{}".format(file_path))
         sys.exit(1)
@@ -381,7 +382,7 @@ def jpgpreview(file_id, folder_id, file_path, logger):
     height = round(height_o * (width / width_o))
     newsize = (width, height)
     im1 = img.resize(newsize)
-    im1.save(preview_image_600, 'jpeg', icc_profile=img.info.get('icc_profile'))
+    im1.save(preview_image_600, 'jpeg', icc_profile=original_profile, quality=100, optimize=True)
     if os.path.isfile(preview_image_600) is False:
         logger.error("File:{}|msg:{}".format(file_path))
         sys.exit(1)
@@ -390,7 +391,7 @@ def jpgpreview(file_id, folder_id, file_path, logger):
     height = round(height_o * (width / width_o))
     newsize = (width, height)
     im1 = img.resize(newsize)
-    im1.save(preview_image_1200, 'jpeg', icc_profile=img.info.get('icc_profile'))
+    im1.save(preview_image_1200, 'jpeg', icc_profile=original_profile, quality=100, optimize=True)
     if os.path.isfile(preview_image_1200) is False:
         logger.error("File:{}|msg:{}".format(file_path))
         sys.exit(1)

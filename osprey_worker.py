@@ -147,7 +147,7 @@ def main():
     logger.info("project_info: {}".format(project_info))
     print("No. of folders: {}".format(len(folders)))
     for folder in folders:
-        print(entry)
+        print(folder)
     for folder in folders:
         run_checks_folder_p(project_info, folder, log_folder, logger)
     return True

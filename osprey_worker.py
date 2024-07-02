@@ -132,8 +132,10 @@ def main():
         else:
             logger.error("Extraneous files in: {}".format(entry.path))
             sys.exit(1)
-    folders.sort()
     if worker_set != None:
+        logger.info("worker_set: {}".format(worker_set))
+        logger.info("no_sets: {}".format(no_sets))
+        folders.sort()
         # Break for sets
         folders_sets = np.array_split(folders, no_sets)
         folders = folders_sets[worker_set].tolist()
@@ -143,6 +145,7 @@ def main():
         return True
     # Check each folder
     logger.info("project_info: {}".format(project_info))
+    print("No. of folders: {}".format(len(folders)))
     for folder in folders:
         print(entry)
     for folder in folders:

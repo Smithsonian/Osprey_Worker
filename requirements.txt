@@ -2,3 +2,4 @@ xmltodict
 pandas
 Pillow
 requests
+numpy

@@ -73,7 +73,7 @@ def jhove_validate(file_path, logger):
         os.unlink(xml_file)
     # Setting JHOVE module
     file_extension = Path(file_path).suffix.lower()
-    if file_extension == ".tif" or file_extension == ".tiff":
+    if file_extension == ".tif" or file_extension == ".tiff" or file_extension == ".dng":
         jhove_module = "TIFF-hul"
     elif file_extension == ".jpg" or file_extension == ".jpeg":
         jhove_module = "JPEG-hul"
@@ -122,15 +122,19 @@ def jhove_validate(file_path, logger):
             # If the only error is with the WhiteBalance, ignore
             # Issue open at Github, seems will be fixed in future release
             # https://github.com/openpreserve/jhove/issues/364
-            if len(doc['jhove']['repInfo']['messages']) == 1 and doc['jhove']['repInfo']['messages']['message']['#text'][:31] == "WhiteBalance value out of range":
-                check_results = 0
-                file_status = doc['jhove']['repInfo']['messages']['message']['#text']
-            else:
+            try:
+                if len(doc['jhove']['repInfo']['messages']) == 1 and doc['jhove']['repInfo']['messages']['message']['#text'][:31] == "WhiteBalance value out of range":
+                    check_results = 0
+                    file_status = doc['jhove']['repInfo']['messages']['message']['#text']
+                else:
+                    check_results = 1
+                    f_stat = []
+                    for msg in doc['jhove']['repInfo']['messages']['message']:
+                        f_stat.append(msg['#text'])
+                    file_status = ", ".join(f_stat)
+            except:
                 check_results = 1
-                f_stat = []
-                for msg in doc['jhove']['repInfo']['messages']['message']:
-                    f_stat.append(msg['#text'])
-                file_status = ", ".join(f_stat)
+                check_info = jhove_results
         check_info = "{}; {}".format(file_status, jhove_results)
     return check_results, check_info
 
@@ -1072,6 +1076,29 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
             if r.status_code != 200:
                 # Something went wrong
                 logger.error("API Returned Error: {}".format(r.text))
+                logger.error("Request: {}".format(str(r.request)))
+                logger.error("Headers: {}".format(r.headers))
+                logger.error("Payload: {}".format(payload))
+                return False
+        # Check the RAWs with JHOVE, only for DNGs
+        if 'jhove_raw' in project_checks:
+            file_check = 'jhove_raw'
+            check_results, check_info = jhove_validate(raw_file, logger)
+            logger.info("jhove_raw_validate: {} {} {}".format(file_id, check_results, check_info))
+            payload = {'type': 'file',
+                    'property': 'filechecks',
+                    'folder_id': folder_id,
+                    'file_id': file_id,
+                    'api_key': settings.api_key,
+                    'file_check': file_check,
+                    'value': check_results,
+                    'check_info': check_info.replace(settings.project_datastorage, "")
+                    }
+            r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
+                            data=payload)
+            query_results = json.loads(r.text.encode('utf-8'))
+            if query_results["result"] is not True:
+                logger.error("API Returned Error: {}".format(query_results))
                 logger.error("Request: {}".format(str(r.request)))
                 logger.error("Headers: {}".format(r.headers))
                 logger.error("Payload: {}".format(payload))

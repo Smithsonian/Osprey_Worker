@@ -20,7 +20,7 @@ import settings
 # Import helper functions
 from functions import *
 
-ver = "2.7.10"
+ver = "2.7.11"
 
 # Pass an argument in the CLI 'debug'
 if len(sys.argv) == 4:
@@ -147,7 +147,7 @@ def main():
     logger.info("project_info: {}".format(project_info))
     print("No. of folders: {}".format(len(folders)))
     for folder in folders:
-        print(folder)
+        logger.info("Folders: {}".format(folder))
     for folder in folders:
         run_checks_folder_p(project_info, folder, log_folder, logger)
     return True

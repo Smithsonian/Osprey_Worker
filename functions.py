@@ -80,8 +80,9 @@ def jhove_validate(file_path, logger):
     elif file_extension == ".jp2":
         jhove_module = "JPEG2000-hul"
     else:
-        logger.error("jhove_error - extension: {}".format(file_extension, ))
-        sys.exit(1)
+        error_info = "jhove_error - extension: {}".format(file_extension, )
+        logger.error(error_info)
+        return 1, error_info
     # Run JHOVE
     p = subprocess.Popen([settings.jhove, "-m", jhove_module, "-h", "xml", "-o", xml_file, file_path],
                             stdout=subprocess.PIPE,
@@ -560,7 +561,7 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
         logger.error("Request: {}".format(str(r.request)))
         logger.error("Headers: {}".format(r.headers))
         logger.error("Payload: {}".format(default_payload))
-        sys.exit(9)
+        return folder_id
     folder_info = json.loads(r.text.encode('utf-8'))
     if folder_info['qc_status'] != "QC Pending":
         # QC done, so skip
@@ -581,7 +582,7 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
         logger.error("Request: {}".format(str(r.request)))
         logger.error("Headers: {}".format(r.headers))
         logger.error("Payload: {}".format(payload))
-        sys.exit(1)
+        return folder_id
     # Check for deleted files
     for file in folder_info['files']:
         if len(glob.glob("{}/{}/{}.*".format(folder_path, settings.main_files_path, file['file_name']))) != 1:
@@ -597,10 +598,31 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
             query_results = json.loads(r.text.encode('utf-8'))
             if query_results["result"] is not True:
                 logger.error("API Returned Error: {}".format(query_results))
-            logger.error("Request: {}".format(str(r.request)))
-            logger.error("Headers: {}".format(r.headers))
-            logger.error("Payload: {}".format(payload))
-            sys.exit(1)
+                logger.error("Request: {}".format(str(r.request)))
+                logger.error("Headers: {}".format(r.headers))
+                logger.error("Payload: {}".format(payload))
+                return folder_id
+    # Check if filename has spaces
+    files = glob.glob("{}/*.*".format(folder_full_path))
+    for file in files:
+        if " " in file:
+            payload = {'type': 'folder',
+               'folder_id': folder_id,
+               'api_key': settings.api_key,
+               'property': 'filename_spaces',
+               'value': 1
+               }
+            r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
+                            data=payload)
+            query_results = json.loads(r.text.encode('utf-8'))
+            if query_results["result"] is not True:
+                logger.error("API Returned Error: {}".format(query_results))
+                logger.error("Request: {}".format(str(r.request)))
+                logger.error("Headers: {}".format(r.headers))
+                logger.error("Payload: {}".format(payload))
+                return folder_id
+
+
     # Check if MD5 exists in tif folder
     if len(glob.glob(folder_path + "/" + settings.main_files_path + "/*.md5")) == 1:
         md5_exists = 0
@@ -620,7 +642,7 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
         logger.error("Request: {}".format(str(r.request)))
         logger.error("Headers: {}".format(r.headers))
         logger.error("Payload: {}".format(payload))
-        sys.exit(1)
+        return folder_id
     # Check if the MD5 file matches the contents of the folder
     if md5_exists == 0:
         md5_check, md5_error = validate_md5(folder_path + "/" + settings.main_files_path)
@@ -642,7 +664,7 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
             logger.error("Request: {}".format(str(r.request)))
             logger.error("Headers: {}".format(r.headers))
             logger.error("Payload: {}".format(payload))
-            sys.exit(1)
+            return folder_id
     # Check if MD5 exists in raw folder
     if 'raw_pair' in project_checks:
         if len(glob.glob(folder_path + "/" + settings.raw_files_path + "/*.md5")) == 1:
@@ -663,7 +685,7 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
             logger.error("Request: {}".format(str(r.request)))
             logger.error("Headers: {}".format(r.headers))
             logger.error("Payload: {}".format(payload))
-            sys.exit(1)
+            return folder_id
         # Check if the MD5 file of RAWS matches the contents of the folder
         if md5_raw_exists == 0:
             md5_check, md5_error = validate_md5(folder_path + "/" + settings.raw_files_path)
@@ -685,7 +707,7 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
                 logger.error("Request: {}".format(str(r.request)))
                 logger.error("Headers: {}".format(r.headers))
                 logger.error("Payload: {}".format(payload))
-                sys.exit(1)
+                return folder_id
     else:
         md5_raw_exists = 0
     if settings.md5_required:
@@ -705,7 +727,7 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
         logger.error("Request: {}".format(str(r.request)))
         logger.error("Headers: {}".format(r.headers))
         logger.error("Payload: {}".format(payload))
-        sys.exit(1)
+        return folder_id
     if os.path.isdir("{}/{}".format(folder_path, settings.main_files_path)) is False:
         folder_status_msg = "Missing MAIN folder in {}".format(folder_path)
         logger.info(folder_status_msg)
@@ -719,7 +741,7 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
             logger.error("Request: {}".format(str(r.request)))
             logger.error("Headers: {}".format(r.headers))
             logger.error("Payload: {}".format(payload))
-            sys.exit(1)
+            return folder_id
         return folder_id
     else:
         logger.info("MAIN folder found in {}".format(folder_path))
@@ -742,7 +764,7 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
                     logger.error("Request: {}".format(str(r.request)))
                     logger.error("Headers: {}".format(r.headers))
                     logger.error("Payload: {}".format(payload))
-                    sys.exit(1)
+                    return folder_id
             else:
                 payload = {'type': 'folder', 'folder_id': folder_id, 'api_key': settings.api_key, 'property': 'status0',
                            'value': ""}
@@ -753,7 +775,7 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
                     logger.error("Request: {}".format(str(r.request)))
                     logger.error("Headers: {}".format(r.headers))
                     logger.error("Payload: {}".format(payload))
-                    sys.exit(1)
+                    return folder_id
         else:
             payload = {'type': 'folder', 'folder_id': folder_id, 'api_key': settings.api_key, 'property': 'status0',
                        'value': ""}
@@ -764,7 +786,7 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
                 logger.error("Request: {}".format(str(r.request)))
                 logger.error("Headers: {}".format(r.headers))
                 logger.error("Payload: {}".format(payload))
-                sys.exit(1)
+                return folder_id
         # Get all files in the folder
         files = glob.glob("{}/*.*".format(folder_full_path))
         # Remove md5 files from list
@@ -807,7 +829,7 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
             logger.error("Request: {}".format(str(r.request)))
             logger.error("Headers: {}".format(r.headers))
             logger.error("Payload: {}".format(default_payload))
-            sys.exit(9)
+            return folder_id
         folder_info = json.loads(r.text.encode('utf-8'))
         if settings.no_workers == 1:
             print_str = "Started run of {notasks} tasks for 'sequence'"

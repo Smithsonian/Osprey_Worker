@@ -1101,29 +1101,30 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
                 logger.error("Headers: {}".format(r.headers))
                 logger.error("Payload: {}".format(payload))
                 return False
-        # Check the RAWs with JHOVE, only for DNGs
-        if 'jhove_raw' in project_checks:
-            file_check = 'jhove_raw'
-            check_results, check_info = jhove_validate(raw_file, logger)
-            logger.info("jhove_raw_validate: {} {} {}".format(file_id, check_results, check_info))
-            payload = {'type': 'file',
-                    'property': 'filechecks',
-                    'folder_id': folder_id,
-                    'file_id': file_id,
-                    'api_key': settings.api_key,
-                    'file_check': file_check,
-                    'value': check_results,
-                    'check_info': check_info.replace(settings.project_datastorage, "")
-                    }
-            r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
-                            data=payload)
-            query_results = json.loads(r.text.encode('utf-8'))
-            if query_results["result"] is not True:
-                logger.error("API Returned Error: {}".format(query_results))
-                logger.error("Request: {}".format(str(r.request)))
-                logger.error("Headers: {}".format(r.headers))
-                logger.error("Payload: {}".format(payload))
-                return False
+            # Check the RAWs with JHOVE, only for DNGs
+            if 'jhove_raw' in project_checks:
+                file_check = 'jhove_raw'
+                logger.info("jhove_raw_validate pre: {} {}".format(file_id, raw_file))
+                check_results, check_info = jhove_validate(raw_file, logger)
+                logger.info("jhove_raw_validate: {} {} {}".format(file_id, check_results, check_info))
+                payload = {'type': 'file',
+                        'property': 'filechecks',
+                        'folder_id': folder_id,
+                        'file_id': file_id,
+                        'api_key': settings.api_key,
+                        'file_check': file_check,
+                        'value': check_results,
+                        'check_info': check_info.replace(settings.project_datastorage, "")
+                        }
+                r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
+                                data=payload)
+                query_results = json.loads(r.text.encode('utf-8'))
+                if query_results["result"] is not True:
+                    logger.error("API Returned Error: {}".format(query_results))
+                    logger.error("Request: {}".format(str(r.request)))
+                    logger.error("Headers: {}".format(r.headers))
+                    logger.error("Payload: {}".format(payload))
+                    return False
     if 'jhove' in project_checks:
         file_check = 'jhove'
         logger.info("jhove_validate_pre: {} {}".format(file_id, main_file_path))

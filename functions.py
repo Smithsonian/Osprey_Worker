@@ -603,6 +603,7 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
                 logger.error("Payload: {}".format(payload))
                 return folder_id
     # Check if filename has spaces
+    folder_full_path = "{}/{}".format(folder_path, settings.main_files_path)
     files = glob.glob("{}/*.*".format(folder_full_path))
     for file in files:
         if " " in file:
@@ -621,8 +622,6 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
                 logger.error("Headers: {}".format(r.headers))
                 logger.error("Payload: {}".format(payload))
                 return folder_id
-
-
     # Check if MD5 exists in tif folder
     if len(glob.glob(folder_path + "/" + settings.main_files_path + "/*.md5")) == 1:
         md5_exists = 0

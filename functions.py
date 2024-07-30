@@ -850,6 +850,7 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
                 pool.join()
     # Update folder stats
     update_folder_stats(folder_id, logger)
+    logger.info("Folder {} completed".format(folder_path))
     return folder_id
 
 

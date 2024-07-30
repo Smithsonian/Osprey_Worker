@@ -120,7 +120,7 @@ def main():
             logger.error("API Returned Error: {}".format(query_results))
             sys.exit(1)
     else:
-        # Wait 30 seconds for first
+        # Wait 20 seconds for first
         logger.info("Waiting for project to clear in database")
         time.sleep(20)
     # Generate list of folders in the path
@@ -150,6 +150,7 @@ def main():
         logger.info("Folders: {}".format(folder))
     for folder in folders:
         run_checks_folder_p(project_info, folder, log_folder, logger)
+    logger.info("Script completed on {}".format(time.strftime("%Y%m%d_%H%M%S", time.localtime())))
     return True
 
 

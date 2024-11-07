@@ -63,7 +63,7 @@ def compress_log():
     return True
 
 
-def jhove_validate(file_path, logger):
+def jhove_validate(file_path):
     """
     Validate the file with JHOVE
     """
@@ -81,7 +81,6 @@ def jhove_validate(file_path, logger):
         jhove_module = "JPEG2000-hul"
     else:
         error_info = "jhove_error - extension: {}".format(file_extension, )
-        logger.error(error_info)
         return 1, error_info
     # Run JHOVE
     p = subprocess.Popen([settings.jhove, "-m", jhove_module, "-h", "xml", "-o", xml_file, file_path],
@@ -119,21 +118,30 @@ def jhove_validate(file_path, logger):
         check_info = jhove_results
     else:
         check_results = 1
-        if len(doc['jhove']['repInfo']['messages']['message']) > 0:
-            # If the only error is with the WhiteBalance, ignore
-            # Issue open at Github, seems will be fixed in future release
-            # https://github.com/openpreserve/jhove/issues/364
-            try:
-                if len(doc['jhove']['repInfo']['messages']) == 1 and doc['jhove']['repInfo']['messages']['message']['#text'][:31] == "WhiteBalance value out of range":
+        # If the only error is with the WhiteBalance, ignore
+        # Issue open at Github, seems will be fixed in future release
+        # https://github.com/openpreserve/jhove/issues/364
+        if type(doc['jhove']['repInfo']['messages']['message']) is dict:
+            # Single message
+            if doc['jhove']['repInfo']['messages']['message']['#text'][:31] == "WhiteBalance value out of range":
+                check_results = 0
+                file_status = doc['jhove']['repInfo']['messages']['message']['#text']
+            elif doc['jhove']['repInfo']['messages']['message']['#text'][:20] == "Unknown TIFF IFD tag":
+                check_results = 0
+                file_status = doc['jhove']['repInfo']['messages']['message']['#text']
+            else:
+                check_results = 1
+                check_info = jhove_results
+                file_status = doc['jhove']['repInfo']['messages']['message']['#text']
+        else:
+            if len(doc['jhove']['repInfo']['messages']['message']) == 2:
+                if doc['jhove']['repInfo']['messages']['message'][0]['#text'][:20] == "Unknown TIFF IFD tag" and doc['jhove']['repInfo']['messages']['message'][1]['#text'][:31] == "WhiteBalance value out of range":
                     check_results = 0
-                    file_status = doc['jhove']['repInfo']['messages']['message']['#text']
-                else:
-                    check_results = 1
                     f_stat = []
                     for msg in doc['jhove']['repInfo']['messages']['message']:
                         f_stat.append(msg['#text'])
                     file_status = ", ".join(f_stat)
-            except:
+            else:
                 check_results = 1
                 check_info = jhove_results
         check_info = "{}; {}".format(file_status, jhove_results)
@@ -518,6 +526,7 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
                 folder_id = folder_info['folder_id']
                 delivered_to_dams = folder_info['delivered_to_dams']
                 logger.info("Folder exists: {}".format(folder_id))
+                # folder found, break loop
                 break
     if folder_id is None:
         # CREATE FOLDER
@@ -1106,7 +1115,7 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
             if 'jhove_raw' in project_checks:
                 file_check = 'jhove_raw'
                 logger.info("jhove_raw_validate pre: {} {}".format(file_id, raw_file))
-                check_results, check_info = jhove_validate(raw_file, logger)
+                check_results, check_info = jhove_validate(raw_file)
                 logger.info("jhove_raw_validate: {} {} {}".format(file_id, check_results, check_info))
                 payload = {'type': 'file',
                         'property': 'filechecks',
@@ -1129,7 +1138,7 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
     if 'jhove' in project_checks:
         file_check = 'jhove'
         logger.info("jhove_validate_pre: {} {}".format(file_id, main_file_path))
-        check_results, check_info = jhove_validate(main_file_path, logger)
+        check_results, check_info = jhove_validate(main_file_path)
         logger.info("jhove_validate: {} {} {}".format(file_id, check_results, check_info))
         payload = {'type': 'file',
                    'property': 'filechecks',

@@ -17,6 +17,9 @@ import shutil
 import locale
 import itertools
 
+# Zoom images
+import si_deepzoom as deepzoom
+
 # For MD5
 import hashlib
 
@@ -409,6 +412,37 @@ def jpgpreview(file_id, folder_id, file_path, logger):
         logger.error("File:{}|msg:{}".format(file_path))
         sys.exit(1)
     return
+
+
+def jpgpreview_zoom(file_id, folder_id, file_path, logger):
+    """
+    Create preview image with zoom-in capabilities
+    """
+    if settings.jpg_previews == "":
+        logger.error("JPG preview folder is not set in settings file")
+        sys.exit(1)
+    if settings.jpg_previews_free != None:
+        disk_check = shutil.disk_usage(settings.jpg_previews)
+        if (disk_check.free / disk_check.total) < settings.jpg_previews_free:
+            logger.error("JPG storage location is running out of space ({}%) - {}".format(
+                                                       round(disk_check.free / disk_check.total, 4) * 100,
+                                                        settings.jpg_previews))
+            sys.exit(1)
+    preview_file_path = "{}/folder{}".format(settings.jpg_previews, str(folder_id))
+    preview_image = "{}/{}.jpg".format(preview_file_path, file_id)
+    zoom_folder = "{}/{}_files".format(preview_file_path, file_id)
+    # Remove tiles folder
+    if os.path.exists(zoom_folder):
+        shutil.rmtree(zoom_folder, ignore_errors=True)
+    # Create subfolder if it doesn't exists
+    os.makedirs(preview_file_path, exist_ok=True)
+    # deepzoom
+    creator = deepzoom.ImageCreator(tile_size=254,
+                           tile_format='jpg',
+                           image_quality=1.0,
+                           resize_filter='antialias')
+    creator.create(file_path, "{}/{}".format(preview_file_path, file_id))
+    return True
 
 
 def md5sum(md5_file, file):
@@ -1002,6 +1036,8 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
     # Generate jpg preview, if needed
     jpg_prev = jpgpreview(file_id, folder_id, main_file_path, logger)
     logger.info("jpg_prev: {} {} {}".format(file_id, main_file_path, jpg_prev))
+    jpg_prev = jpgpreview_zoom(file_id, folder_id, main_file_path, logger)
+    logger.info("jpgpreview_zoom: {} {} {}".format(file_id, main_file_path, jpg_prev))
     logger.info("file_md5_pre: {} {}".format(file_id, main_file_path))
     file_md5 = get_filemd5(main_file_path, logger)
     logger.info("file_md5: {} {} - {}".format(file_id, main_file_path, file_md5))

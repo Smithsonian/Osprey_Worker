@@ -182,23 +182,6 @@ def magick_validate(file_id, filename, logger, paranoid=False):
     return check_results, check_info
 
 
-def pil_validate(file_id, filename, logger):
-    """
-    Validate the file with PIL
-    """
-    # Based on https://opensource.com/article/17/2/python-tricks-artists
-    check_results = 0
-    check_info = "File {} ({}) is a valid image".format(filename, file_id)
-    try:
-        im = Image.open(filename)
-        im.verify()
-    except (IOError, SyntaxError) as e:
-        check_results = 1
-        check_info = "File is not a valid image"
-        logger.error("pil_validate error: {} ({})".format(filename, file_id))
-    return check_results, check_info
-
-
 def check_sequence(filename, folder_info, sequence, sequence_split):
     filename_stem = Path(filename).stem
     file_id = None
@@ -256,10 +239,6 @@ def sequence_validate(filename, folder_info):
     r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias), data=payload)
     query_results = json.loads(r.text.encode('utf-8'))
     if query_results["result"] is not True:
-        # logger.error("API Returned Error: {}".format(query_results))
-        # logger.error("Request: {}".format(str(r.request)))
-        # logger.error("Headers: {}".format(r.headers))
-        # logger.error("Payload: {}".format(payload))
         return False
     return True
 
@@ -359,16 +338,18 @@ def jpgpreview(file_id, folder_id, file_path, logger):
                                                         settings.jpg_previews))
             sys.exit(1)
     preview_file_path = "{}/folder{}".format(settings.jpg_previews, str(folder_id))
-    preview_image = "{}/{}.jpg".format(preview_file_path, file_id)
+    # preview_image = "{}/{}.jpg".format(preview_file_path, file_id)
     preview_image_160 = "{}/160/{}.jpg".format(preview_file_path, file_id)
-    preview_image_600 = "{}/600/{}.jpg".format(preview_file_path, file_id)
-    preview_image_1200 = "{}/1200/{}.jpg".format(preview_file_path, file_id)
+    # preview_image_600 = "{}/600/{}.jpg".format(preview_file_path, file_id)
+    # preview_image_1200 = "{}/1200/{}.jpg".format(preview_file_path, file_id)
     # Create subfolder if it doesn't exists
     os.makedirs(preview_file_path, exist_ok=True)
     # Other sizes
-    for width in [160, 600, 1200]:
-        resized_preview_file_path = "{}/{}".format(preview_file_path, width)
-        os.makedirs(resized_preview_file_path, exist_ok=True)
+    # for width in [160, 600, 1200]:
+    #     resized_preview_file_path = "{}/{}".format(preview_file_path, width)
+    #     os.makedirs(resized_preview_file_path, exist_ok=True)
+    resized_preview_file_path = "{}/{}".format(preview_file_path, 160)
+    os.makedirs(resized_preview_file_path, exist_ok=True)
     # Check if preview exist
     # if os.path.isfile(preview_image) and os.path.isfile(preview_image_1200) and \
     #     os.path.isfile(preview_image_160) and os.path.isfile(preview_image_600):
@@ -378,10 +359,10 @@ def jpgpreview(file_id, folder_id, file_path, logger):
     # if settings.previews_size == "full":
     # Save full size by default
     original_profile = img.info.get("icc_profile")
-    img.save(preview_image, 'jpeg', icc_profile=original_profile, quality=100, optimize=True)
-    if os.path.isfile(preview_image) is False:
-        logger.error("File:{}|msg:{}".format(file_path))
-        sys.exit(1)
+    # img.save(preview_image, 'jpeg', icc_profile=original_profile, quality=100)
+    # if os.path.isfile(preview_image) is False:
+    #     logger.error("File:{}|msg:{}".format(file_path))
+    #     sys.exit(1)
     img = Image.open(file_path)
     # 160
     width = 160
@@ -389,28 +370,28 @@ def jpgpreview(file_id, folder_id, file_path, logger):
     height = round(height_o * (width / width_o))
     newsize = (width, height)
     im1 = img.resize(newsize)
-    im1.save(preview_image_160, 'jpeg', icc_profile=original_profile, quality=100, optimize=True)
+    im1.save(preview_image_160, 'jpeg', icc_profile=original_profile, quality=100)
     if os.path.isfile(preview_image_160) is False:
         logger.error("File:{}|msg:{}".format(file_path))
         sys.exit(1)
     # 600
-    width = 600
-    height = round(height_o * (width / width_o))
-    newsize = (width, height)
-    im1 = img.resize(newsize)
-    im1.save(preview_image_600, 'jpeg', icc_profile=original_profile, quality=100, optimize=True)
-    if os.path.isfile(preview_image_600) is False:
-        logger.error("File:{}|msg:{}".format(file_path))
-        sys.exit(1)
+    # width = 600
+    # height = round(height_o * (width / width_o))
+    # newsize = (width, height)
+    # im1 = img.resize(newsize)
+    # im1.save(preview_image_600, 'jpeg', icc_profile=original_profile, quality=100)
+    # if os.path.isfile(preview_image_600) is False:
+    #     logger.error("File:{}|msg:{}".format(file_path))
+    #     sys.exit(1)
     # 1200
-    width = 1200
-    height = round(height_o * (width / width_o))
-    newsize = (width, height)
-    im1 = img.resize(newsize)
-    im1.save(preview_image_1200, 'jpeg', icc_profile=original_profile, quality=100, optimize=True)
-    if os.path.isfile(preview_image_1200) is False:
-        logger.error("File:{}|msg:{}".format(file_path))
-        sys.exit(1)
+    # width = 1200
+    # height = round(height_o * (width / width_o))
+    # newsize = (width, height)
+    # im1 = img.resize(newsize)
+    # im1.save(preview_image_1200, 'jpeg', icc_profile=original_profile, quality=100)
+    # if os.path.isfile(preview_image_1200) is False:
+    #     logger.error("File:{}|msg:{}".format(file_path))
+    #     sys.exit(1)
     return
 
 
@@ -441,7 +422,7 @@ def jpgpreview_zoom(file_id, folder_id, file_path, logger):
                            tile_format='jpg',
                            image_quality=1.0,
                            resize_filter='antialias')
-    creator.create(file_path, "{}/{}".format(preview_file_path, file_id))
+    creator.create(file_path, "{}/{}.dzi".format(preview_file_path, file_id))
     return True
 
 
@@ -905,7 +886,7 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
     import random
     import logging
     import time
-    import subprocess
+    # import subprocess
     import requests
     random_int = random.randint(1, 1000)
     # Logging

@@ -9,24 +9,17 @@ import json
 import requests
 import pandas as pd
 from random import randint
-
 import glob
 from PIL import Image
 from pathlib import Path
 import shutil
 import locale
 import itertools
+import hashlib
+from multiprocessing import Pool
 
 # Zoom images
 import si_deepzoom as deepzoom
-
-# For MD5
-import hashlib
-
-# Parallel
-import multiprocessing
-from multiprocessing import Pool
-
 # Get settings and queries
 import settings
 
@@ -36,15 +29,6 @@ import settings
 Image.MAX_IMAGE_PIXELS = 1000000000
 
 
-def check_requirements(program):
-    """
-    Check if required programs are installed
-    """
-    # From https://stackoverflow.com/a/34177358
-    from shutil import which
-    return which(program) is not None
-
-
 def compress_log():
     """
     Compress log files
@@ -52,9 +36,12 @@ def compress_log():
     filecheck_dir = os.path.dirname(__file__)
     os.chdir('{}/logs'.format(filecheck_dir))
     folders = []
+    files = []
     for entry in os.scandir('.'):
         if entry.is_dir():
             folders.append(entry.path)
+        elif entry.is_file():
+            files.append(entry.path)
     # No folders found
     if len(folders) == 0:
         return None
@@ -62,6 +49,9 @@ def compress_log():
     for folder in folders:
         subprocess.run(["zip", "-r", "{}.zip".format(folder), folder])
         shutil.rmtree(folder)
+    for file in files:
+        subprocess.run(["zip", "{}.zip".format(file), file])
+        shutil.rmtree(file)
     os.chdir(filecheck_dir)
     return True
 
@@ -76,9 +66,9 @@ def jhove_validate(file_path):
         os.unlink(xml_file)
     # Setting JHOVE module
     file_extension = Path(file_path).suffix.lower()
-    if file_extension == ".tif" or file_extension == ".tiff" or file_extension == ".dng":
+    if file_extension in (".tif", ".tiff", ".dng"):
         jhove_module = "TIFF-hul"
-    elif file_extension == ".jpg" or file_extension == ".jpeg":
+    elif file_extension in (".jpg", ".jpeg"):
         jhove_module = "JPEG-hul"
     elif file_extension == ".jp2":
         jhove_module = "JPEG2000-hul"
@@ -340,29 +330,12 @@ def jpgpreview(file_id, folder_id, file_path, logger):
     preview_file_path = "{}/folder{}".format(settings.jpg_previews, str(folder_id))
     # preview_image = "{}/{}.jpg".format(preview_file_path, file_id)
     preview_image_160 = "{}/160/{}.jpg".format(preview_file_path, file_id)
-    # preview_image_600 = "{}/600/{}.jpg".format(preview_file_path, file_id)
-    # preview_image_1200 = "{}/1200/{}.jpg".format(preview_file_path, file_id)
     # Create subfolder if it doesn't exists
     os.makedirs(preview_file_path, exist_ok=True)
-    # Other sizes
-    # for width in [160, 600, 1200]:
-    #     resized_preview_file_path = "{}/{}".format(preview_file_path, width)
-    #     os.makedirs(resized_preview_file_path, exist_ok=True)
     resized_preview_file_path = "{}/{}".format(preview_file_path, 160)
     os.makedirs(resized_preview_file_path, exist_ok=True)
-    # Check if preview exist
-    # if os.path.isfile(preview_image) and os.path.isfile(preview_image_1200) and \
-    #     os.path.isfile(preview_image_160) and os.path.isfile(preview_image_600):
-    #     logger.info("Preview images of {} exist".format(file_id))
-    #     return True
     img = Image.open(file_path)
-    # if settings.previews_size == "full":
-    # Save full size by default
     original_profile = img.info.get("icc_profile")
-    # img.save(preview_image, 'jpeg', icc_profile=original_profile, quality=100)
-    # if os.path.isfile(preview_image) is False:
-    #     logger.error("File:{}|msg:{}".format(file_path))
-    #     sys.exit(1)
     img = Image.open(file_path)
     # 160
     width = 160
@@ -374,24 +347,6 @@ def jpgpreview(file_id, folder_id, file_path, logger):
     if os.path.isfile(preview_image_160) is False:
         logger.error("File:{}|msg:{}".format(file_path))
         sys.exit(1)
-    # 600
-    # width = 600
-    # height = round(height_o * (width / width_o))
-    # newsize = (width, height)
-    # im1 = img.resize(newsize)
-    # im1.save(preview_image_600, 'jpeg', icc_profile=original_profile, quality=100)
-    # if os.path.isfile(preview_image_600) is False:
-    #     logger.error("File:{}|msg:{}".format(file_path))
-    #     sys.exit(1)
-    # 1200
-    # width = 1200
-    # height = round(height_o * (width / width_o))
-    # newsize = (width, height)
-    # im1 = img.resize(newsize)
-    # im1.save(preview_image_1200, 'jpeg', icc_profile=original_profile, quality=100)
-    # if os.path.isfile(preview_image_1200) is False:
-    #     logger.error("File:{}|msg:{}".format(file_path))
-    #     sys.exit(1)
     return
 
 
@@ -1265,6 +1220,5 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
             logger.error("Payload: {}".format(payload))
             return False
     return True
-
 
 

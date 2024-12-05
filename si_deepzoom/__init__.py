@@ -258,6 +258,7 @@ class DeepZoomCollection(object):
             if os.path.exists(source_path):
                 try:
                     source_image = PIL.Image.open(safe_open(source_path))
+                    source_image_profile=source_image.info.get('icc_profile')
                 except IOError:
                     warnings.warn('Skipped invalid level: {}'.format(source_path))
                     continue
@@ -266,6 +267,7 @@ class DeepZoomCollection(object):
                 if level == self.max_level:
                     try:
                         source_image = PIL.Image.open(safe_open(source_path))
+                        source_image_profile=source_image.info.get('icc_profile')
                     except IOError:
                         warnings.warn('Skipped invalid image: {}'.format(source_path))
                         return
@@ -277,18 +279,18 @@ class DeepZoomCollection(object):
                     # have wrong dimensions (they are too large)
                     if w != e_w or h != e_h:
                         # Resize incorrect tile to correct size
-                        source_image = source_image.resize((e_w, e_h), PIL.Image.LANCZOS, icc_profile=source_image.info.get('icc_profile'))
+                        source_image = source_image.resize((e_w, e_h), PIL.Image.LANCZOS, icc_profile=source_image_profile)
                         # Store new dimensions
                         w, h = e_w, e_h
                 else:
                     w = int(math.ceil(w * 0.5))
                     h = int(math.ceil(h * 0.5))
-                    source_image.thumbnail((w, h), PIL.Image.LANCZOS)
+                    source_image.thumbnail((w, h), PIL.Image.LANCZOS, icc_profile=source_image_profile)
             column, row = self.get_position(i)
             x = (column % images_per_tile) * level_size
             y = (row % images_per_tile) * level_size
             tile_image.paste(source_image, (x, y))
-            tile_image.save(tile_path, icc_profile=source_image.info.get('icc_profile'))
+            tile_image.save(tile_path, icc_profile=source_image_profile)
 
     def get_position(self, z_order):
         """Returns position (column, row) from given Z-order (Morton number.)"""
@@ -360,15 +362,13 @@ class ImageCreator(object):
         if self.descriptor.width == width and self.descriptor.height == height:
             return self.image
         if (self.resize_filter is None) or (self.resize_filter not in RESIZE_FILTERS):
-            return self.image.resize((width, height), PIL.Image.LANCZOS)
-        return self.image.resize((width, height), RESIZE_FILTERS[self.resize_filter])
+            return self.image.resize((width, height), PIL.Image.LANCZOS, icc_profile=self.image.info.get('icc_profile'))
+        return self.image.resize((width, height), RESIZE_FILTERS[self.resize_filter], icc_profile=self.image.info.get('icc_profile'))
 
     def tiles(self, level):
         """Iterator for all tiles in the given level. Returns (column, row) of a tile."""
         columns, rows = self.descriptor.get_num_tiles(level)
-        for column in range(columns):
-            for row in range(rows):
-                yield (column, row)
+        return [(column, row) for column in range(columns) for row in range(rows)]
 
     def create(self, source, destination):
         """Creates Deep Zoom image from source file and saves it to destination."""
@@ -470,5 +470,12 @@ def _remove(path):
 
 @retry(6)
 def safe_open(path):
-    with open(path, 'rb') as f:
-        return io.BytesIO(f.read())
+    """
+    Safely open a file and return its content as a BytesIO object.
+    """
+    try:
+        with open(path, 'rb') as f:
+            return io.BytesIO(f.read())
+    except IOError as e:
+        print(f"Error opening file {path}: {e}")
+        raise

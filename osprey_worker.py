@@ -13,14 +13,17 @@ import os
 import time
 import requests
 import numpy as np
+import json
+import locale
+import sys
+import subprocess
 
 # Import settings from settings.py file
 import settings
-
 # Import helper functions
 from functions import *
 
-ver = "2.8.0"
+ver = "2.8.1"
 
 # Pass an argument in the CLI 'debug'
 if len(sys.argv) == 4:
@@ -55,7 +58,6 @@ logging.basicConfig(filename=logfile, filemode='a', level=logging.DEBUG,
                     format='%(levelname)s | %(asctime)s | %(filename)s:%(lineno)s | %(message)s',
                     datefmt='%y-%b-%d %H:%M:%S')
 logger = logging.getLogger("osprey")
-
 logging.info("osprey version {}".format(ver))
 
 # Set locale for number format
@@ -65,25 +67,24 @@ locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
 ############################################
 # Check requirements
 ############################################
-if check_requirements(settings.jhove) is False:
-    logger.error("JHOVE was not found")
-    sys.exit(1)
+def check_requirements():
+    """
+    Check if all required tools are available.
+    """
+    tools = [settings.jhove, settings.exiftool, settings.magick]
+    for tool in tools:
+        if not check_requirements(tool):
+            logger.error(f"{tool} was not found")
+            sys.exit(1)
 
-
-if check_requirements(settings.exiftool) is False:
-    logger.error("exiftool was not found")
-    sys.exit(1)
-
-
-if check_requirements(settings.magick) is False:
-    logger.error("imagemagick was not found")
-    sys.exit(1)
 
 ############################################
 # Main
 ############################################
 def main():
-    # Check that the paths are valid dirs and are mounted
+    """
+    Main function to validate images in digitization projects.
+    """
     if not os.path.isdir(settings.project_datastorage):
         logger.error("Path not found: {}".format(settings.project_datastorage))
         sys.exit(1)
@@ -158,6 +159,7 @@ def main():
 # Main loop
 ############################################
 if __name__ == "__main__":
+    check_requirements()
     if run_debug == 'debug':
         print("Running debug version...")
         main()

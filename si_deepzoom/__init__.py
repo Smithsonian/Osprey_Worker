@@ -279,7 +279,7 @@ class DeepZoomCollection(object):
                     # have wrong dimensions (they are too large)
                     if w != e_w or h != e_h:
                         # Resize incorrect tile to correct size
-                        source_image = source_image.resize((e_w, e_h), PIL.Image.LANCZOS, icc_profile=source_image_profile)
+                        source_image = source_image.resize((e_w, e_h), PIL.Image.LANCZOS)
                         # Store new dimensions
                         w, h = e_w, e_h
                 else:
@@ -362,8 +362,8 @@ class ImageCreator(object):
         if self.descriptor.width == width and self.descriptor.height == height:
             return self.image
         if (self.resize_filter is None) or (self.resize_filter not in RESIZE_FILTERS):
-            return self.image.resize((width, height), PIL.Image.LANCZOS, icc_profile=self.image.info.get('icc_profile'))
-        return self.image.resize((width, height), RESIZE_FILTERS[self.resize_filter], icc_profile=self.image.info.get('icc_profile'))
+            return self.image.resize((width, height), PIL.Image.LANCZOS)
+        return self.image.resize((width, height), RESIZE_FILTERS[self.resize_filter])
 
     def tiles(self, level):
         """Iterator for all tiles in the given level. Returns (column, row) of a tile."""

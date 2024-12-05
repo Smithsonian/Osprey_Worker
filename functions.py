@@ -29,6 +29,15 @@ import settings
 Image.MAX_IMAGE_PIXELS = 1000000000
 
 
+def check_requirements(program):
+    """
+    Check if required programs are installed
+    """
+    # From https://stackoverflow.com/a/34177358
+    from shutil import which
+    return which(program) is not None
+
+
 def compress_log():
     """
     Compress log files
@@ -967,7 +976,7 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
             logger.error("Request: {}".format(str(r.request)))
             logger.error("Headers: {}".format(r.headers))
             logger.error("Payload: {}".format(payload))
-            return False
+            # return False
     logging.debug("file_info: {} - {}".format(file_id, file_info))
     # Generate jpg preview, if needed
     jpg_prev = jpgpreview(file_id, folder_id, main_file_path, logger)

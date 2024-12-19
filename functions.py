@@ -335,7 +335,7 @@ def jpgpreview(file_id, folder_id, file_path, logger):
             logger.error("JPG storage location is running out of space ({}%) - {}".format(
                                                        round(disk_check.free / disk_check.total, 4) * 100,
                                                         settings.jpg_previews))
-            sys.exit(1)
+            return False
     preview_file_path = "{}/folder{}".format(settings.jpg_previews, str(folder_id))
     # preview_image = "{}/{}.jpg".format(preview_file_path, file_id)
     preview_image_160 = "{}/160/{}.jpg".format(preview_file_path, file_id)
@@ -793,7 +793,9 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
             logger.info(print_str)
             # Process files in parallel
             for file in files:
-                process_image_p(file, folder_path, folder_id, project_id, logfile_folder)
+                res = process_image_p(file, folder_path, folder_id, project_id, logfile_folder)
+                if res is False:
+                    sys.exit()
         else:
             print_str = "Started parallel run of {notasks} tasks on {workers} workers for {folder_path}"
             print_str = print_str.format(notasks=str(locale.format_string("%d", no_tasks, grouping=True)), workers=str(
@@ -981,6 +983,8 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
     # Generate jpg preview, if needed
     jpg_prev = jpgpreview(file_id, folder_id, main_file_path, logger)
     logger.info("jpg_prev: {} {} {}".format(file_id, main_file_path, jpg_prev))
+    if jpg_prev is False:
+        return False
     jpg_prev = jpgpreview_zoom(file_id, folder_id, main_file_path, logger)
     logger.info("jpgpreview_zoom: {} {} {}".format(file_id, main_file_path, jpg_prev))
     logger.info("file_md5_pre: {} {}".format(file_id, main_file_path))

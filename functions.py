@@ -181,10 +181,10 @@ def magick_validate(file_id, filename, logger, paranoid=False):
     return check_results, check_info
 
 
-def check_sequence(filename, folder_info, sequence, sequence_split):
+def check_sequence(filename, project_files, sequence, sequence_split):
     filename_stem = Path(filename).stem
     file_id = None
-    for file in folder_info['files']:
+    for file in project_files:
         if file['file_name'] == filename_stem:
             file_id = file['file_id']
             file_info = file
@@ -208,7 +208,7 @@ def check_sequence(filename, folder_info, sequence, sequence_split):
         if file_suffix == sequence[i]:
             next_in_seq = sequence[i + 1]
             next_filename_stem = "{}{}{}".format(file_wo_suffix, sequence_split, next_in_seq)
-            for file in folder_info['files']:
+            for file in project_files:
                 if file['file_name'] == next_filename_stem:
                     check_results = 0
                     check_info = "Next file in sequence ({}) found".format(next_filename_stem)
@@ -218,17 +218,17 @@ def check_sequence(filename, folder_info, sequence, sequence_split):
     return (file_id, check_results, check_info)
 
 
-def sequence_validate(filename, folder_info):
+def sequence_validate(filename, folder_id, project_files):
     """
     Validate that a suffix sequence is not missing items
     """
     sequence = settings.sequence
     sequence_split = settings.sequence_split
-    file_id, check_results, check_info = check_sequence(filename, folder_info, sequence, sequence_split)
+    file_id, check_results, check_info = check_sequence(filename, project_files, sequence, sequence_split)
     file_check = 'sequence'
     payload = {'type': 'file',
                'property': 'filechecks',
-               'folder_id': folder_info['folder_id'],
+               'folder_id': folder_id,
                'file_id': file_id,
                'api_key': settings.api_key,
                'file_check': file_check,
@@ -810,7 +810,7 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
     # Run end-of-folder checks
     if 'sequence' in project_checks:
         no_tasks = len(files)
-        r = requests.post('{}/api/folders/{}'.format(settings.api_url, folder_id), data=default_payload)
+        r = requests.post('{}/api/projects/{}/files'.format(settings.api_url, project_id), data=default_payload)
         if r.status_code != 200:
             # Something went wrong
             logger.error(
@@ -819,21 +819,21 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
             logger.error("Headers: {}".format(r.headers))
             logger.error("Payload: {}".format(default_payload))
             return folder_id
-        folder_info = json.loads(r.text.encode('utf-8'))
+        project_files = json.loads(r.text.encode('utf-8'))
         if settings.no_workers == 1:
             print_str = "Started run of {notasks} tasks for 'sequence'"
             print_str = print_str.format(notasks=str(locale.format_string("%d", no_tasks, grouping=True)))
             logger.info(print_str)
             # Process files in parallel
             for file in files:
-                sequence_validate(file, folder_info)
+                sequence_validate(file, folder_id, project_files)
         else:
             print_str = "Started parallel run of {notasks} tasks on {workers} workers for 'sequence'"
             print_str = print_str.format(notasks=str(locale.format_string("%d", no_tasks, grouping=True)), workers=str(
                 settings.no_workers))
             logger.info(print_str)
             # Process files in parallel
-            inputs = zip(files, itertools.repeat(folder_info))
+            inputs = zip(files, itertools.repeat(folder_id), itertools.repeat(project_files))
             with Pool(settings.no_workers) as pool:
                 pool.starmap(sequence_validate, inputs)
                 pool.close()
@@ -959,26 +959,45 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
                 file_id = file['file_id']
                 file_info = file
                 break
-    else:
-        # File exists, check if there is a dupe
+    # else:
+    # File exists, check if there is a dupe
+    payload = {'type': 'file',
+                'property': 'unique',
+                'folder_id': folder_id,
+                'file_id': file_id,
+                'api_key': settings.api_key,
+                'file_check': 'unique_file',
+                'value': True,
+                'check_info': True
+                }
+    r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
+                        data=payload)
+    query_results = json.loads(r.text.encode('utf-8'))
+    if query_results["result"] is not True:
+        logger.error("API Returned Error: {}".format(query_results))
+        logger.error("Request: {}".format(str(r.request)))
+        logger.error("Headers: {}".format(r.headers))
+        logger.error("Payload: {}".format(payload))
+        # return False
+    # Check if there is a dupe in another project
+    if 'unique_other' in project_checks:
         payload = {'type': 'file',
-                   'property': 'unique',
-                   'folder_id': folder_id,
-                   'file_id': file_id,
-                   'api_key': settings.api_key,
-                   'file_check': 'unique_file',
-                   'value': True,
-                   'check_info': True
-                   }
+                    'property': 'unique_other',
+                    'folder_id': folder_id,
+                    'file_id': file_id,
+                    'api_key': settings.api_key,
+                    'file_check': 'unique_other',
+                    'value': True,
+                    'check_info': True
+                    }
         r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
-                          data=payload)
+                            data=payload)
         query_results = json.loads(r.text.encode('utf-8'))
         if query_results["result"] is not True:
             logger.error("API Returned Error: {}".format(query_results))
             logger.error("Request: {}".format(str(r.request)))
             logger.error("Headers: {}".format(r.headers))
             logger.error("Payload: {}".format(payload))
-            # return False
     logging.debug("file_info: {} - {}".format(file_id, file_info))
     # Generate jpg preview, if needed
     jpg_prev = jpgpreview(file_id, folder_id, main_file_path, logger)

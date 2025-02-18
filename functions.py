@@ -74,18 +74,21 @@ def jhove_validate(file_path):
     if os.path.isfile(xml_file):
         os.unlink(xml_file)
     # Setting JHOVE module
-    file_extension = Path(file_path).suffix.lower()
-    if file_extension in (".tif", ".tiff", ".dng"):
-        jhove_module = "TIFF-hul"
-    elif file_extension in (".jpg", ".jpeg"):
-        jhove_module = "JPEG-hul"
-    elif file_extension == ".jp2":
-        jhove_module = "JPEG2000-hul"
-    else:
-        error_info = "jhove_error - extension: {}".format(file_extension, )
-        return 1, error_info
+    # file_extension = Path(file_path).suffix.lower()
+    # if file_extension in (".tif", ".tiff", ".dng"):
+    #     jhove_module = "TIFF-hul"
+    # elif file_extension in (".jpg", ".jpeg"):
+    #     jhove_module = "JPEG-hul"
+    # elif file_extension == ".jp2":
+    #     jhove_module = "JPEG2000-hul"
+    # else:
+    #     error_info = "jhove_error - extension: {}".format(file_extension, )
+    #     return 1, error_info
     # Run JHOVE
-    p = subprocess.Popen([settings.jhove, "-m", jhove_module, "-h", "xml", "-o", xml_file, file_path],
+    # p = subprocess.Popen([settings.jhove, "-m", jhove_module, "-h", "xml", "-o", xml_file, file_path],
+    #                         stdout=subprocess.PIPE,
+    #                         stderr=subprocess.PIPE)
+    p = subprocess.Popen([settings.jhove, "-h", "xml", "-o", xml_file, file_path],
                             stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE)
     (out, err) = p.communicate()
@@ -97,7 +100,10 @@ def jhove_validate(file_path):
         # Try again
         if os.path.isfile(xml_file):
             os.unlink(xml_file)
-        p = subprocess.Popen([settings.jhove, "-m", jhove_module, "-h", "xml", "-o", xml_file, file_path],
+        # p = subprocess.Popen([settings.jhove, "-m", jhove_module, "-h", "xml", "-o", xml_file, file_path],
+        #                         stdout=subprocess.PIPE,
+        #                         stderr=subprocess.PIPE)
+        p = subprocess.Popen([settings.jhove, "-h", "xml", "-o", xml_file, file_path],
                                 stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE)
         (out, err) = p.communicate()
@@ -150,7 +156,7 @@ def jhove_validate(file_path):
     return check_results, check_info
 
 
-def magick_validate(file_id, filename, logger, paranoid=False):
+def magick_validate(filename, paranoid=False):
     """
     Validate the file with Imagemagick
     """
@@ -173,8 +179,6 @@ def magick_validate(file_id, filename, logger, paranoid=False):
         magick_identify = 0
     else:
         magick_identify = 1
-        logger.error("magick_out: {} {}".format(file_id, out.decode('UTF-8')))
-        logger.error("magick_err: {} {}".format(file_id, err.decode('UTF-8')))
     magick_identify_info = out + err
     check_results = magick_identify
     check_info = magick_identify_info.decode('latin-1')
@@ -1052,23 +1056,64 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
     if 'raw_pair' in project_checks:
         file_check = 'raw_pair'
         # FilePair check and get MD5 hash
-        logger.info("raw_pair_pre: {} {}".format(file_id, file_name))
         check_results, check_info, raw_file = file_pair_check(file_id,
                                      file_name,
                                      "{}/{}".format(folder_path, settings.raw_files_path),
                                      'raw_pair')
         logger.info("raw_pair: {} {} {} {}".format(file_id, file_name, check_results, check_info))
+        exists_check_results = check_results
+        exists_check_info = check_info
+        # payload = {'type': 'file',
+        #            'property': 'filechecks',
+        #            'folder_id': folder_id,
+        #            'file_id': file_id,
+        #            'api_key': settings.api_key,
+        #            'file_check': file_check,
+        #            'value': check_results,
+        #            'check_info': check_info
+        #            }
+        # r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
+        #                   data=payload)
+        # query_results = json.loads(r.text.encode('utf-8'))
+        # if query_results["result"] is not True:
+        #     logger.error("API Returned Error: {}".format(query_results))
+        #     logger.error("Request: {}".format(str(r.request)))
+        #     logger.error("Headers: {}".format(r.headers))
+        #     logger.error("Payload: {}".format(payload))
+        #     return False
+        # Check the RAWs with JHOVE and Imagemagick
+        # if 'raw' in project_checks:
+        # file_check = 'raw'
+        check_results1, check_info1 = jhove_validate(raw_file)
+        check_results2, check_info2 = magick_validate(raw_file)
+        res = ""
+        if check_results1 == 1:
+            res1 = "JHOVE could not validate: {}".format(check_info1)
+            check_results1 = 1
+        else:
+            res1 = "JHOVE validated the file: {}".format(check_info1)
+            check_results1 = 0
+        if check_results2 == 1:
+            res2 = "Imagemagick could not validate: {}".format(check_info2)
+            check_results2 = 1
+        else:
+            res2 = "Imagemagick validated the file: {}".format(check_info2)
+            check_results2 = 0
+        if (check_results1 + check_results2) > 0:
+            check_results = 1
+        else:
+            check_results = 0
         payload = {'type': 'file',
-                   'property': 'filechecks',
-                   'folder_id': folder_id,
-                   'file_id': file_id,
-                   'api_key': settings.api_key,
-                   'file_check': file_check,
-                   'value': check_results,
-                   'check_info': check_info
-                   }
+                'property': 'filechecks',
+                'folder_id': folder_id,
+                'file_id': file_id,
+                'api_key': settings.api_key,
+                'file_check': file_check,
+                'value': check_results,
+                'check_info': "{}\n{}\n{}".format(exists_check_info, res1, res2).replace(settings.project_datastorage, "")
+                }
         r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
-                          data=payload)
+                        data=payload)
         query_results = json.loads(r.text.encode('utf-8'))
         if query_results["result"] is not True:
             logger.error("API Returned Error: {}".format(query_results))
@@ -1076,10 +1121,9 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
             logger.error("Headers: {}".format(r.headers))
             logger.error("Payload: {}".format(payload))
             return False
+        # MD5 of RAW file
         if check_results == 0:
-            logger.info("file_raw_md5_pre: {} {}".format(file_id, raw_file))
             file_md5 = get_filemd5(raw_file, logger)
-            logger.info("file_raw_md5: {} {} - {}".format(file_id, raw_file, file_md5))
             payload = {'type': 'file',
                        'property': 'filemd5',
                        'file_id': file_id,
@@ -1096,54 +1140,28 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
                 logger.error("Headers: {}".format(r.headers))
                 logger.error("Payload: {}".format(payload))
                 return False
-            # Raw file size
-            file_size = os.path.getsize(raw_file)
-            logging.debug("raw_file_size: {} {}".format(raw_file, file_size))
-            raw_filetype = Path(raw_file).suffix[1:]
-            payload = {
-                'api_key': settings.api_key,
-                'type': "filesize",
-                'file_id': file_id,
-                'filetype': raw_filetype.lower(),
-                'filesize': file_size
-            }
-            r = requests.post('{}/api/new/{}'.format(settings.api_url, settings.project_alias), data=payload)
-            if r.status_code != 200:
-                # Something went wrong
-                logger.error("API Returned Error: {}".format(r.text))
-                logger.error("Request: {}".format(str(r.request)))
-                logger.error("Headers: {}".format(r.headers))
-                logger.error("Payload: {}".format(payload))
-                return False
-            # Check the RAWs with JHOVE, only for DNGs
-            if 'jhove_raw' in project_checks:
-                file_check = 'jhove_raw'
-                logger.info("jhove_raw_validate pre: {} {}".format(file_id, raw_file))
-                check_results, check_info = jhove_validate(raw_file)
-                logger.info("jhove_raw_validate: {} {} {}".format(file_id, check_results, check_info))
-                payload = {'type': 'file',
-                        'property': 'filechecks',
-                        'folder_id': folder_id,
-                        'file_id': file_id,
-                        'api_key': settings.api_key,
-                        'file_check': file_check,
-                        'value': check_results,
-                        'check_info': check_info.replace(settings.project_datastorage, "")
-                        }
-                r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
-                                data=payload)
-                query_results = json.loads(r.text.encode('utf-8'))
-                if query_results["result"] is not True:
-                    logger.error("API Returned Error: {}".format(query_results))
-                    logger.error("Request: {}".format(str(r.request)))
-                    logger.error("Headers: {}".format(r.headers))
-                    logger.error("Payload: {}".format(payload))
-                    return False
+        # Raw file size
+        file_size = os.path.getsize(raw_file)
+        logging.debug("raw_file_size: {} {}".format(raw_file, file_size))
+        raw_filetype = Path(raw_file).suffix[1:]
+        payload = {
+            'api_key': settings.api_key,
+            'type': "filesize",
+            'file_id': file_id,
+            'filetype': raw_filetype.lower(),
+            'filesize': file_size
+        }
+        r = requests.post('{}/api/new/{}'.format(settings.api_url, settings.project_alias), data=payload)
+        if r.status_code != 200:
+            # Something went wrong
+            logger.error("API Returned Error: {}".format(r.text))
+            logger.error("Request: {}".format(str(r.request)))
+            logger.error("Headers: {}".format(r.headers))
+            logger.error("Payload: {}".format(payload))
+            return False
     if 'jhove' in project_checks:
         file_check = 'jhove'
-        logger.info("jhove_validate_pre: {} {}".format(file_id, main_file_path))
         check_results, check_info = jhove_validate(main_file_path)
-        logger.info("jhove_validate: {} {} {}".format(file_id, check_results, check_info))
         payload = {'type': 'file',
                    'property': 'filechecks',
                    'folder_id': folder_id,
@@ -1207,9 +1225,7 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
             return False
     if 'magick' in project_checks:
         file_check = 'magick'
-        logger.info("magick_validate_pre: {} {}".format(file_id, main_file_path))
-        check_results, check_info = magick_validate(file_id, main_file_path, logger)
-        logger.info("magick_validate: {} {} {}".format(file_id, check_results, check_info))
+        check_results, check_info = magick_validate(main_file_path)
         if check_results != 0:
             logger.error("magick error: {}".format(check_info))
             sys.exit(1)

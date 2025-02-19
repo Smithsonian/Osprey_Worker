@@ -1063,6 +1063,7 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
         logger.info("raw_pair: {} {} {} {}".format(file_id, file_name, check_results, check_info))
         exists_check_results = check_results
         exists_check_info = check_info
+        rawfile_suffix = Path(raw_file).suffix[1:]
         # payload = {'type': 'file',
         #            'property': 'filechecks',
         #            'folder_id': folder_id,
@@ -1094,8 +1095,12 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
             res1 = "JHOVE validated the file: {}".format(check_info1)
             check_results1 = 0
         if check_results2 == 1:
-            res2 = "Imagemagick could not validate: {}".format(check_info2)
-            check_results2 = 1
+            if rawfile_suffix == "eip":
+                check_results2 = 0
+                res2 = ""
+            else:
+                res2 = "Imagemagick could not validate: {}".format(check_info2)
+                check_results2 = 1
         else:
             res2 = "Imagemagick validated the file: {}".format(check_info2)
             check_results2 = 0

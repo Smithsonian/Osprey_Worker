@@ -1,7 +1,6 @@
 # Functions for osprey_worker.py
 from datetime import datetime
 import os
-import stat
 import subprocess
 import xmltodict
 import sys
@@ -73,21 +72,6 @@ def jhove_validate(file_path):
     xml_file = "{}/jhove_{}.xml".format(settings.tmp_folder, randint(100, 100000))
     if os.path.isfile(xml_file):
         os.unlink(xml_file)
-    # Setting JHOVE module
-    # file_extension = Path(file_path).suffix.lower()
-    # if file_extension in (".tif", ".tiff", ".dng"):
-    #     jhove_module = "TIFF-hul"
-    # elif file_extension in (".jpg", ".jpeg"):
-    #     jhove_module = "JPEG-hul"
-    # elif file_extension == ".jp2":
-    #     jhove_module = "JPEG2000-hul"
-    # else:
-    #     error_info = "jhove_error - extension: {}".format(file_extension, )
-    #     return 1, error_info
-    # Run JHOVE
-    # p = subprocess.Popen([settings.jhove, "-m", jhove_module, "-h", "xml", "-o", xml_file, file_path],
-    #                         stdout=subprocess.PIPE,
-    #                         stderr=subprocess.PIPE)
     p = subprocess.Popen([settings.jhove, "-h", "xml", "-o", xml_file, file_path],
                             stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE)
@@ -100,9 +84,6 @@ def jhove_validate(file_path):
         # Try again
         if os.path.isfile(xml_file):
             os.unlink(xml_file)
-        # p = subprocess.Popen([settings.jhove, "-m", jhove_module, "-h", "xml", "-o", xml_file, file_path],
-        #                         stdout=subprocess.PIPE,
-        #                         stderr=subprocess.PIPE)
         p = subprocess.Popen([settings.jhove, "-h", "xml", "-o", xml_file, file_path],
                                 stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE)
@@ -1064,27 +1045,6 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
         exists_check_results = check_results
         exists_check_info = check_info
         rawfile_suffix = Path(raw_file).suffix[1:]
-        # payload = {'type': 'file',
-        #            'property': 'filechecks',
-        #            'folder_id': folder_id,
-        #            'file_id': file_id,
-        #            'api_key': settings.api_key,
-        #            'file_check': file_check,
-        #            'value': check_results,
-        #            'check_info': check_info
-        #            }
-        # r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
-        #                   data=payload)
-        # query_results = json.loads(r.text.encode('utf-8'))
-        # if query_results["result"] is not True:
-        #     logger.error("API Returned Error: {}".format(query_results))
-        #     logger.error("Request: {}".format(str(r.request)))
-        #     logger.error("Headers: {}".format(r.headers))
-        #     logger.error("Payload: {}".format(payload))
-        #     return False
-        # Check the RAWs with JHOVE and Imagemagick
-        # if 'raw' in project_checks:
-        # file_check = 'raw'
         check_results1, check_info1 = jhove_validate(raw_file)
         check_results2, check_info2 = magick_validate(raw_file)
         res = ""
@@ -1273,5 +1233,4 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
             logger.error("Payload: {}".format(payload))
             return False
     return True
-
 

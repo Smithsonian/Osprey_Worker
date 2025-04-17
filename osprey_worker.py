@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 #
 # Osprey script
-# https://github.com/Smithsonian/Osprey
+# https://github.com/Smithsonian/Osprey_worker
 #
 # Validate images in Digitization Projects
 #

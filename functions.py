@@ -1044,30 +1044,35 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
         logger.info("raw_pair: {} {} {} {}".format(file_id, file_name, check_results, check_info))
         exists_check_results = check_results
         exists_check_info = check_info
-        rawfile_suffix = Path(raw_file).suffix[1:]
-        check_results1, check_info1 = jhove_validate(raw_file)
-        check_results2, check_info2 = magick_validate(raw_file)
-        res = ""
-        if check_results1 == 1:
-            res1 = "JHOVE could not validate: {}".format(check_info1)
-            check_results1 = 1
-        else:
-            res1 = "JHOVE validated the file: {}".format(check_info1)
-            check_results1 = 0
-        if check_results2 == 1:
-            if rawfile_suffix == "eip":
-                check_results2 = 0
-                res2 = ""
+        if check_results == 1:
+            rawfile_suffix = ""
+            res1 = "Could not find the RAW file"
+            res2 = ""
+        else: 
+            rawfile_suffix = Path(raw_file).suffix[1:]
+            check_results1, check_info1 = jhove_validate(raw_file)
+            check_results2, check_info2 = magick_validate(raw_file)
+            res = ""
+            if check_results1 == 1:
+                res1 = "JHOVE could not validate: {}".format(check_info1)
+                check_results1 = 1
             else:
-                res2 = "Imagemagick could not validate: {}".format(check_info2)
-                check_results2 = 1
-        else:
-            res2 = "Imagemagick validated the file: {}".format(check_info2)
-            check_results2 = 0
-        if (check_results1 + check_results2) > 0:
-            check_results = 1
-        else:
-            check_results = 0
+                res1 = "JHOVE validated the file: {}".format(check_info1)
+                check_results1 = 0
+            if check_results2 == 1:
+                if rawfile_suffix == "eip":
+                    check_results2 = 0
+                    res2 = ""
+                else:
+                    res2 = "Imagemagick could not validate: {}".format(check_info2)
+                    check_results2 = 1
+            else:
+                res2 = "Imagemagick validated the file: {}".format(check_info2)
+                check_results2 = 0
+            if (check_results1 + check_results2) > 0:
+                check_results = 1
+            else:
+                check_results = 0
         payload = {'type': 'file',
                 'property': 'filechecks',
                 'folder_id': folder_id,

@@ -1110,25 +1110,25 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
                 logger.error("Headers: {}".format(r.headers))
                 logger.error("Payload: {}".format(payload))
                 return False
-        # Raw file size
-        file_size = os.path.getsize(raw_file)
-        logging.debug("raw_file_size: {} {}".format(raw_file, file_size))
-        raw_filetype = Path(raw_file).suffix[1:]
-        payload = {
-            'api_key': settings.api_key,
-            'type': "filesize",
-            'file_id': file_id,
-            'filetype': raw_filetype.lower(),
-            'filesize': file_size
-        }
-        r = requests.post('{}/api/new/{}'.format(settings.api_url, settings.project_alias), data=payload)
-        if r.status_code != 200:
-            # Something went wrong
-            logger.error("API Returned Error: {}".format(r.text))
-            logger.error("Request: {}".format(str(r.request)))
-            logger.error("Headers: {}".format(r.headers))
-            logger.error("Payload: {}".format(payload))
-            return False
+            # Raw file size
+            file_size = os.path.getsize(raw_file)
+            logging.debug("raw_file_size: {} {}".format(raw_file, file_size))
+            raw_filetype = Path(raw_file).suffix[1:]
+            payload = {
+                'api_key': settings.api_key,
+                'type': "filesize",
+                'file_id': file_id,
+                'filetype': raw_filetype.lower(),
+                'filesize': file_size
+            }
+            r = requests.post('{}/api/new/{}'.format(settings.api_url, settings.project_alias), data=payload)
+            if r.status_code != 200:
+                # Something went wrong
+                logger.error("API Returned Error: {}".format(r.text))
+                logger.error("Request: {}".format(str(r.request)))
+                logger.error("Headers: {}".format(r.headers))
+                logger.error("Payload: {}".format(payload))
+                return False
     if 'jhove' in project_checks:
         file_check = 'jhove'
         check_results, check_info = jhove_validate(main_file_path)

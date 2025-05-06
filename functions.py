@@ -595,6 +595,27 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
                 logger.error("Headers: {}".format(r.headers))
                 logger.error("Payload: {}".format(payload))
             return folder_id
+    if 'raw_pair' in project_checks:
+        # Check if filename in raws have spaces
+        folder_full_path = "{}/{}".format(folder_path, settings.raw_files_path)
+        files = glob.glob("{}/*.*".format(folder_full_path))
+        for file in files:
+            if " " in file:
+                payload = {'type': 'folder',
+                'folder_id': folder_id,
+                'api_key': settings.api_key,
+                'property': 'filename_spaces',
+                'value': 1
+                }
+                r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
+                                data=payload)
+                query_results = json.loads(r.text.encode('utf-8'))
+                if query_results["result"] is not True:
+                    logger.error("API Returned Error: {}".format(query_results))
+                    logger.error("Request: {}".format(str(r.request)))
+                    logger.error("Headers: {}".format(r.headers))
+                    logger.error("Payload: {}".format(payload))
+                return folder_id
     # Check if MD5 exists in tif folder
     if len(glob.glob(folder_path + "/" + settings.main_files_path + "/*.md5")) == 1:
         md5_exists = 0

@@ -856,6 +856,7 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
         no_files_api = len(folder_info['files'])
         folder_full_path = "{}/{}".format(folder_path, settings.main_files_path)
         files = glob.glob("{}/*.*".format(folder_full_path))
+        files = [file for file in files if Path(file).suffix != '.md5']
         no_files_main = len(files)
         if no_files_api != no_files_main:
             logger.error("Files in system ({}) do not match files in API ()".format(no_files_main, no_files_api))

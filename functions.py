@@ -844,6 +844,31 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
                 pool.starmap(sequence_validate, inputs)
                 pool.close()
                 pool.join()
+    # Verify numbers match
+    r = requests.post('{}/api/folders/{}'.format(settings.api_url, folder_id), data=default_payload)
+    if r.status_code != 200:
+        # Something went wrong
+        query_results = r.text.encode('utf-8')
+        logger.error("API Returned Error: {}".format(query_results))
+        return False
+    folder_info = json.loads(r.text.encode('utf-8'))
+    if folder_info['file_errors'] == 0:
+        no_files_api = len(folder_info['files'])
+        folder_full_path = "{}/{}".format(folder_path, settings.main_files_path)
+        files = glob.glob("{}/*.*".format(folder_full_path))
+        no_files_main = len(files)
+        if no_files_api != no_files_main:
+            logger.error("Files in system ({}) do not match files in API ()".format(no_files_main, no_files_api))
+            payload = {'type': 'folder', 'folder_id': folder_id, 'api_key': settings.api_key, 'property': 'status1', 'value': "System error"}
+            r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
+                                data=payload)
+            query_results = json.loads(r.text.encode('utf-8'))
+            if query_results["result"] is not True:
+                logger.error("API Returned Error: {}".format(query_results))
+                logger.error("Request: {}".format(str(r.request)))
+                logger.error("Headers: {}".format(r.headers))
+                logger.error("Payload: {}".format(payload))
+                return folder_id
     # Update folder stats
     update_folder_stats(folder_id, logger)
     logger.info("Folder {} completed".format(folder_path))

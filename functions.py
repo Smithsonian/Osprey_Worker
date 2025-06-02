@@ -141,20 +141,27 @@ def magick_validate(filename, paranoid=False):
     """
     Validate the file with Imagemagick
     """
+    try:
+        settings.magick_limit
+    except NameError:
+        magick_limit = ""
+    else:
+        magick_limit = "MAGICK_THREAD_LIMIT={}".format(settings.magick_limit)
+        
     if paranoid:
         if settings.magick is None:
-            p = subprocess.Popen(['identify', '-verbose', '-regard-warnings', filename], stdout=subprocess.PIPE,
-                             stderr=subprocess.PIPE, env={"MAGICK_THREAD_LIMIT": "1"})
+            p = subprocess.Popen([magick_limit, 'identify', '-verbose', '-regard-warnings', filename], stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, env={"MAGICK_THREAD_LIMIT": "1"}, shell=True)
         else:
-            p = subprocess.Popen([settings.magick, '-verbose', '-regard-warnings', filename], stdout=subprocess.PIPE,
-                             stderr=subprocess.PIPE, env={"MAGICK_THREAD_LIMIT": "1"})
+            p = subprocess.Popen([magick_limit, settings.magick, '-verbose', '-regard-warnings', filename], stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, env={"MAGICK_THREAD_LIMIT": "1"}, shell=True)
     else:
         if settings.magick is None:
-            p = subprocess.Popen(['identify', '-verbose', filename], stdout=subprocess.PIPE,
-                             stderr=subprocess.PIPE, env={"MAGICK_THREAD_LIMIT": "1"})
+            p = subprocess.Popen([magick_limit, 'identify', '-verbose', filename], stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, env={"MAGICK_THREAD_LIMIT": "1"}, shell=True)
         else:
-            p = subprocess.Popen([settings.magick, '-verbose', filename], stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE, env={"MAGICK_THREAD_LIMIT": "1"})
+            p = subprocess.Popen([magick_limit, settings.magick, '-verbose', filename], stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, env={"MAGICK_THREAD_LIMIT": "1"}, shell=True)
     (out, err) = p.communicate()
     if p.returncode == 0:
         magick_identify = 0
@@ -313,7 +320,7 @@ def jpgpreview(file_id, folder_id, file_path, logger):
     """
     if settings.jpg_previews == "":
         logger.error("JPG preview folder is not set in settings file")
-        sys.exit(1)
+        return False
     if settings.jpg_previews_free != None:
         disk_check = shutil.disk_usage(settings.jpg_previews)
         if (disk_check.free / disk_check.total) < settings.jpg_previews_free:
@@ -340,7 +347,7 @@ def jpgpreview(file_id, folder_id, file_path, logger):
     im1.save(preview_image_160, 'jpeg', icc_profile=original_profile, quality=100)
     if os.path.isfile(preview_image_160) is False:
         logger.error("File:{}|msg:{}".format(file_path))
-        sys.exit(1)
+        return False
     return
 
 
@@ -350,16 +357,16 @@ def jpgpreview_zoom(file_id, folder_id, file_path, logger):
     """
     if settings.jpg_previews == "":
         logger.error("JPG preview folder is not set in settings file")
-        sys.exit(1)
+        return False
     if settings.jpg_previews_free != None:
         disk_check = shutil.disk_usage(settings.jpg_previews)
         if (disk_check.free / disk_check.total) < settings.jpg_previews_free:
             logger.error("JPG storage location is running out of space ({}%) - {}".format(
                                                        round(disk_check.free / disk_check.total, 4) * 100,
                                                         settings.jpg_previews))
-            sys.exit(1)
+            return False
     preview_file_path = "{}/folder{}".format(settings.jpg_previews, str(folder_id))
-    preview_image = "{}/{}.jpg".format(preview_file_path, file_id)
+    # preview_image = "{}/{}.jpg".format(preview_file_path, file_id)
     zoom_folder = "{}/{}_files".format(preview_file_path, file_id)
     # Remove tiles folder
     if os.path.exists(zoom_folder):
@@ -459,7 +466,7 @@ def update_folder_stats(folder_id, logger):
         logger.error("Request: {}".format(str(r.request)))
         logger.error("Headers: {}".format(r.headers))
         logger.error("Payload: {}".format(payload))
-        sys.exit(1)
+        return False
     return True
 
 
@@ -474,11 +481,25 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
         # Something went wrong
         query_results = r.text.encode('utf-8')
         logger.error("API Returned Error: {}".format(query_results))
-        sys.exit(1)
+        return False
     project_info = json.loads(r.text.encode('utf-8'))
     project_checks = project_info['project_checks']
     logger.info("Processing folder: {}".format(folder_path))
     folder_name = os.path.basename(folder_path)
+    # MD5 required?
+    if settings.md5_required:
+        if 'raw_pair' in project_checks:
+            if len(glob.glob(folder_path + "/" + settings.raw_files_path + "/*.md5")) == 1:
+                md5_raw_exists = 0
+            else:
+                logger.info("Folder {} is missing md5 files".format(folder_path))
+                return False
+        # Check if MD5 exists in tif folder
+            if len(glob.glob(folder_path + "/" + settings.main_files_path + "/*.md5")) == 1:
+                md5_exists = 0
+            else:
+                logger.info("Folder {} is missing md5 files".format(folder_path))
+                return False
     # Check if the folder exists in the database
     folder_id = None
     if len(project_info['folders']) > 0:
@@ -512,14 +533,14 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
             logger.error("Request: {}".format(str(r.request)))
             logger.error("Headers: {}".format(r.headers))
             logger.error("Payload: {}".format(payload))
-            sys.exit(1)
+            return False
         else:
             folder_id = query_results["result"][0]['folder_id']
             delivered_to_dams = 9
     # if folder_id is None:
     if 'folder_id' not in locals():
         logger.error("Could not get folder_id for {}".format(folder_name))
-        sys.exit(1)
+        return False
     # Check if folder is ready or in DAMS
     if delivered_to_dams == 0 or delivered_to_dams == 1:
         # Folder ready for or delivered to DAMS, skip
@@ -801,7 +822,7 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
             for file in files:
                 res = process_image_p(file, folder_path, folder_id, project_id, logfile_folder)
                 if res is False:
-                    sys.exit()
+                    return False
         else:
             print_str = "Started parallel run of {notasks} tasks on {workers} workers for {folder_path}"
             print_str = print_str.format(notasks=str(locale.format_string("%d", no_tasks, grouping=True)), workers=str(
@@ -858,6 +879,7 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
         files = glob.glob("{}/*.*".format(folder_full_path))
         files = [file for file in files if Path(file).suffix != '.md5']
         no_files_main = len(files)
+        logger.info("Folder numbers match: (folder_id:{}) {}/{}".format(folder_id, no_files_main, len(files)))
         if no_files_api != no_files_main:
             logger.error("Files in system ({}) do not match files in API ()".format(no_files_main, no_files_api))
             payload = {'type': 'folder', 'folder_id': folder_id, 'api_key': settings.api_key, 'property': 'status1', 'value': "System error"}
@@ -900,6 +922,11 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
     filename_stem = Path(filename).stem
     filename_suffix = Path(filename).suffix[1:]
     file_name = Path(filename).name
+    # Copy to tmp folder
+    tmp_folder = "{}/{}".format(settings.tmp_folder, random.randint(100,10000))
+    os.mkdir(tmp_folder)
+    tmp_folder_file = "{}/{}".format(tmp_folder, file_name)
+    shutil.copy(main_file_path, tmp_folder_file)
     default_payload = {'api_key': settings.api_key}
     # s = requests.Session()
     r = requests.post('{}/api/folders/{}'.format(settings.api_url, folder_id), data=default_payload)
@@ -909,6 +936,7 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
         logger.error("Request: {}".format(str(r.request)))
         logger.error("Headers: {}".format(r.headers))
         logger.error("Payload: {}".format(default_payload))
+        shutil.rmtree(tmp_folder, ignore_errors=True)
         return False
     folder_info = json.loads(r.text.encode('utf-8'))
     r = requests.post('{}/api/projects/{}'.format(settings.api_url, settings.project_alias), data=default_payload)
@@ -916,7 +944,7 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
         # Something went wrong
         query_results = r.text.encode('utf-8')
         logger.error("API Returned Error: {}".format(query_results))
-        sys.exit(1)
+        return False
     project_info = json.loads(r.text.encode('utf-8'))
     project_checks = project_info['project_checks']
     logger.info("project_checks: {}".format(project_checks))
@@ -947,6 +975,7 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
             logger.error("Request: {}".format(str(r.request)))
             logger.error("Headers: {}".format(r.headers))
             logger.error("Payload: {}".format(payload))
+            shutil.rmtree(tmp_folder, ignore_errors=True)
             return False
         else:
             logger.info("API Returned: {}".format(r.text))
@@ -955,9 +984,12 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
         file_id = file_info[0]['file_id']
         file_uid = file_info[0]['uid']
         # Get filesize from TIF:
-        logging.debug("file_size_pre: {}".format(main_file_path))
-        file_size = os.path.getsize(main_file_path)
-        logging.debug("file_size: {} {}".format(main_file_path, file_size))
+        # logging.debug("file_size_pre: {}".format(main_file_path))
+        # file_size = os.path.getsize(main_file_path)
+        # logging.debug("file_size: {} {}".format(main_file_path, file_size))
+        logging.debug("file_size_pre: {}".format(tmp_folder_file))
+        file_size = os.path.getsize(tmp_folder_file)
+        logging.debug("file_size: {} {}".format(tmp_folder_file, file_size))
         filetype = filename_suffix
         payload = {
             'api_key': settings.api_key,
@@ -973,6 +1005,7 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
             logger.error("Request: {}".format(str(r.request)))
             logger.error("Headers: {}".format(r.headers))
             logger.error("Payload: {}".format(payload))
+            shutil.rmtree(tmp_folder, ignore_errors=True)
             return False
         # Refresh folder info
         r = requests.post('{}/api/folders/{}'.format(settings.api_url, folder_id), data=default_payload)
@@ -983,6 +1016,7 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
             logger.error("Request: {}".format(str(r.request)))
             logger.error("Headers: {}".format(r.headers))
             logger.error("Payload: {}".format(payload))
+            shutil.rmtree(tmp_folder, ignore_errors=True)
             return False
         folder_info = json.loads(r.text.encode('utf-8'))
         # logger.info("folder_info:{}".format(folder_info))
@@ -1032,15 +1066,22 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
             logger.error("Payload: {}".format(payload))
     logging.debug("file_info: {} - {}".format(file_id, file_info))
     # Generate jpg preview, if needed
-    jpg_prev = jpgpreview(file_id, folder_id, main_file_path, logger)
-    logger.info("jpg_prev: {} {} {}".format(file_id, main_file_path, jpg_prev))
+    # jpg_prev = jpgpreview(file_id, folder_id, main_file_path, logger)
+    jpg_prev = jpgpreview(file_id, folder_id, tmp_folder_file, logger)
+    logger.info("jpg_prev: {} {} {}".format(file_id, tmp_folder_file, jpg_prev))
     if jpg_prev is False:
+        shutil.rmtree(tmp_folder, ignore_errors=True)
         return False
-    jpg_prev = jpgpreview_zoom(file_id, folder_id, main_file_path, logger)
-    logger.info("jpgpreview_zoom: {} {} {}".format(file_id, main_file_path, jpg_prev))
-    logger.info("file_md5_pre: {} {}".format(file_id, main_file_path))
-    file_md5 = get_filemd5(main_file_path, logger)
-    logger.info("file_md5: {} {} - {}".format(file_id, main_file_path, file_md5))
+    # jpg_prev = jpgpreview_zoom(file_id, folder_id, main_file_path, logger)
+    jpg_prev = jpgpreview_zoom(file_id, folder_id, tmp_folder_file, logger)
+    logger.info("jpgpreview_zoom: {} {} {}".format(file_id, tmp_folder_file, jpg_prev))
+    logger.info("file_md5_pre: {} {}".format(file_id, tmp_folder_file))
+    file_md5 = get_filemd5(tmp_folder_file, logger)
+    logger.info("file_md5: {} {} - {}".format(file_id, tmp_folder_file, file_md5))
+    # logger.info("jpgpreview_zoom: {} {} {}".format(file_id, main_file_path, jpg_prev))
+    # logger.info("file_md5_pre: {} {}".format(file_id, main_file_path))
+    # file_md5 = get_filemd5(main_file_path, logger)
+    # logger.info("file_md5: {} {} - {}".format(file_id, main_file_path, file_md5))
     payload = {'type': 'file',
                'property': 'filemd5',
                'file_id': file_id,
@@ -1057,11 +1098,13 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
         logger.error("Request: {}".format(str(r.request)))
         logger.error("Headers: {}".format(r.headers))
         logger.error("Payload: {}".format(payload))
+        shutil.rmtree(tmp_folder, ignore_errors=True)
         return False
     # Get exif from TIF
     logger.info("file_exif_pre: {}".format(main_file_path))
-    data = get_file_exif(main_file_path)
-    logger.info("file_exif: {}".format(main_file_path))
+    # data = get_file_exif(main_file_path)
+    data = get_file_exif(tmp_folder_file)
+    logger.info("file_exif: {}".format(tmp_folder_file))
     data_json = json.loads(data)
     payload = {'type': 'file',
                'property': 'exif',
@@ -1078,6 +1121,7 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
         logger.error("Request: {}".format(str(r.request)))
         logger.error("Headers: {}".format(r.headers))
         logger.error("Payload: {}".format(payload))
+        shutil.rmtree(tmp_folder, ignore_errors=True)
         return False
     logger.info("Running checks on file {} ({}; folder_id: {})".format(filename_stem, file_id, folder_id))
     # Run each check
@@ -1091,14 +1135,19 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
         logger.info("raw_pair: {} {} {} {}".format(file_id, file_name, check_results, check_info))
         exists_check_results = check_results
         exists_check_info = check_info
+        # Copy raw to tmp
+        tmp_folder_rawfile = "{}/{}".format(tmp_folder, Path(raw_file).name)
+        shutil.copy(raw_file, tmp_folder_rawfile)
         if check_results == 1:
             rawfile_suffix = ""
             res1 = "Could not find the RAW file"
             res2 = ""
         else: 
             rawfile_suffix = Path(raw_file).suffix[1:]
-            check_results1, check_info1 = jhove_validate(raw_file)
-            check_results2, check_info2 = magick_validate(raw_file)
+            # check_results1, check_info1 = jhove_validate(raw_file)
+            # check_results2, check_info2 = magick_validate(raw_file)
+            check_results1, check_info1 = jhove_validate(tmp_folder_rawfile)
+            check_results2, check_info2 = magick_validate(tmp_folder_rawfile)
             res = ""
             if check_results1 == 1:
                 res1 = "JHOVE could not validate: {}".format(check_info1)
@@ -1137,6 +1186,7 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
             logger.error("Request: {}".format(str(r.request)))
             logger.error("Headers: {}".format(r.headers))
             logger.error("Payload: {}".format(payload))
+            shutil.rmtree(tmp_folder, ignore_errors=True)
             return False
         # MD5 of RAW file
         if check_results == 0:
@@ -1156,6 +1206,7 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
                 logger.error("Request: {}".format(str(r.request)))
                 logger.error("Headers: {}".format(r.headers))
                 logger.error("Payload: {}".format(payload))
+                shutil.rmtree(tmp_folder, ignore_errors=True)
                 return False
             # Raw file size
             file_size = os.path.getsize(raw_file)
@@ -1175,10 +1226,12 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
                 logger.error("Request: {}".format(str(r.request)))
                 logger.error("Headers: {}".format(r.headers))
                 logger.error("Payload: {}".format(payload))
+                shutil.rmtree(tmp_folder, ignore_errors=True)
                 return False
     if 'jhove' in project_checks:
         file_check = 'jhove'
-        check_results, check_info = jhove_validate(main_file_path)
+        # check_results, check_info = jhove_validate(main_file_path)
+        check_results, check_info = jhove_validate(tmp_folder_file)
         payload = {'type': 'file',
                    'property': 'filechecks',
                    'folder_id': folder_id,
@@ -1196,6 +1249,7 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
             logger.error("Request: {}".format(str(r.request)))
             logger.error("Headers: {}".format(r.headers))
             logger.error("Payload: {}".format(payload))
+            shutil.rmtree(tmp_folder, ignore_errors=True)
             return False
     if 'filename' in project_checks:
         file_check = 'filename'
@@ -1216,11 +1270,13 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
             logger.error("Request: {}".format(str(r.request)))
             logger.error("Headers: {}".format(r.headers))
             logger.error("Payload: {}".format(payload))
+            shutil.rmtree(tmp_folder, ignore_errors=True)
             return False
     if 'tifpages' in project_checks:
         file_check = 'tifpages'
         logger.info("tifpages_pre: {} {}".format(file_id, main_file_path))
-        check_results, check_info = tifpages(main_file_path)
+        # check_results, check_info = tifpages(main_file_path)
+        check_results, check_info = tifpages(tmp_folder_file)
         logger.info("tifpages: {} {} {}".format(file_id, check_results, check_info))
         payload = {'type': 'file',
                    'property': 'filechecks',
@@ -1239,13 +1295,16 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
             logger.error("Request: {}".format(str(r.request)))
             logger.error("Headers: {}".format(r.headers))
             logger.error("Payload: {}".format(payload))
+            shutil.rmtree(tmp_folder, ignore_errors=True)
             return False
     if 'magick' in project_checks:
         file_check = 'magick'
-        check_results, check_info = magick_validate(main_file_path)
+        check_results, check_info = magick_validate(tmp_folder_file)
+        # check_results, check_info = magick_validate(main_file_path)
         if check_results != 0:
             logger.error("magick error: {}".format(check_info))
-            sys.exit(1)
+            shutil.rmtree(tmp_folder, ignore_errors=True)
+            return False
         payload = {'type': 'file',
                    'property': 'filechecks',
                    'folder_id': folder_id,
@@ -1260,11 +1319,13 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
         query_results = json.loads(r.text.encode('utf-8'))
         if query_results["result"] is not True:
             logger.error("API Returned Error: {}".format(query_results))
-            sys.exit(1)
+            shutil.rmtree(tmp_folder, ignore_errors=True)
+            return False
     if 'tif_compression' in project_checks:
         file_check = 'tif_compression'
         logger.info("tif_compression_pre: {} {}".format(file_id, main_file_path))
-        check_results, check_info = tif_compression(main_file_path)
+        # check_results, check_info = tif_compression(main_file_path)
+        check_results, check_info = tif_compression(tmp_folder_file)
         logger.info("tif_compression: {} {} {}".format(file_id, check_results, check_info))
         payload = {'type': 'file',
                    'property': 'filechecks',
@@ -1283,6 +1344,8 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
             logger.error("Request: {}".format(str(r.request)))
             logger.error("Headers: {}".format(r.headers))
             logger.error("Payload: {}".format(payload))
+            shutil.rmtree(tmp_folder, ignore_errors=True)
             return False
+    shutil.rmtree(tmp_folder, ignore_errors=True)
     return True
 

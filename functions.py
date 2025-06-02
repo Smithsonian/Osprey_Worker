@@ -925,6 +925,12 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
     # Copy to tmp folder
     tmp_folder = "{}/osprey_{}".format(settings.tmp_folder, random.randint(100,10000))
     os.mkdir(tmp_folder)
+    try:
+        os.mkdir(tmp_folder)
+    except OSError as error:
+        # Try another name
+        tmp_folder = "{}/osprey_{}b".format(settings.tmp_folder, random.randint(100,10000))
+        os.mkdir(tmp_folder)
     tmp_folder_file = "{}/{}".format(tmp_folder, file_name)
     shutil.copy(main_file_path, tmp_folder_file)
     default_payload = {'api_key': settings.api_key}

@@ -20,6 +20,7 @@ import subprocess
 
 # Import settings from settings.py file
 import settings
+
 # Import helper functions
 from functions import *
 
@@ -56,7 +57,7 @@ else:
     logfile = '{}/{}_{}.log'.format(log_folder, settings.project_alias, current_time)
 logging.basicConfig(filename=logfile, filemode='a', level=logging.DEBUG,
                     format='%(levelname)s | %(asctime)s | %(filename)s:%(lineno)s | %(message)s',
-                    datefmt='%y-%b-%d %H:%M:%S')
+                    datefmt='%Y-%b-%d %H:%M:%S')
 logger = logging.getLogger("osprey")
 logging.info("osprey version {}".format(ver))
 

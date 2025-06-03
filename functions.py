@@ -941,7 +941,7 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
         logger.error("Request: {}".format(str(r.request)))
         logger.error("Headers: {}".format(r.headers))
         logger.error("Payload: {}".format(default_payload))
-        shutil.rmtree(tmp_folder, ignore_errors=True)
+        shutil.rmtree(tmp_folder)
         return False
     folder_info = json.loads(r.text.encode('utf-8'))
     r = requests.post('{}/api/projects/{}'.format(settings.api_url, settings.project_alias), data=default_payload)
@@ -949,6 +949,7 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
         # Something went wrong
         query_results = r.text.encode('utf-8')
         logger.error("API Returned Error: {}".format(query_results))
+        shutil.rmtree(tmp_folder)
         return False
     project_info = json.loads(r.text.encode('utf-8'))
     project_checks = project_info['project_checks']
@@ -980,7 +981,7 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
             logger.error("Request: {}".format(str(r.request)))
             logger.error("Headers: {}".format(r.headers))
             logger.error("Payload: {}".format(payload))
-            shutil.rmtree(tmp_folder, ignore_errors=True)
+            shutil.rmtree(tmp_folder)
             return False
         else:
             logger.info("API Returned: {}".format(r.text))
@@ -1010,7 +1011,7 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
             logger.error("Request: {}".format(str(r.request)))
             logger.error("Headers: {}".format(r.headers))
             logger.error("Payload: {}".format(payload))
-            shutil.rmtree(tmp_folder, ignore_errors=True)
+            shutil.rmtree(tmp_folder)
             return False
         # Refresh folder info
         r = requests.post('{}/api/folders/{}'.format(settings.api_url, folder_id), data=default_payload)
@@ -1021,7 +1022,7 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
             logger.error("Request: {}".format(str(r.request)))
             logger.error("Headers: {}".format(r.headers))
             logger.error("Payload: {}".format(payload))
-            shutil.rmtree(tmp_folder, ignore_errors=True)
+            shutil.rmtree(tmp_folder)
             return False
         folder_info = json.loads(r.text.encode('utf-8'))
         # logger.info("folder_info:{}".format(folder_info))
@@ -1049,7 +1050,8 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
         logger.error("Request: {}".format(str(r.request)))
         logger.error("Headers: {}".format(r.headers))
         logger.error("Payload: {}".format(payload))
-        # return False
+        shutil.rmtree(tmp_folder)
+        return False
     # Check if there is a dupe in another project
     if 'unique_other' in project_checks:
         payload = {'type': 'file',
@@ -1069,13 +1071,15 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
             logger.error("Request: {}".format(str(r.request)))
             logger.error("Headers: {}".format(r.headers))
             logger.error("Payload: {}".format(payload))
+            shutil.rmtree(tmp_folder)
+            return False
     logging.debug("file_info: {} - {}".format(file_id, file_info))
     # Generate jpg preview, if needed
     # jpg_prev = jpgpreview(file_id, folder_id, main_file_path, logger)
     jpg_prev = jpgpreview(file_id, folder_id, tmp_folder_file, logger)
     logger.info("jpg_prev: {} {} {}".format(file_id, tmp_folder_file, jpg_prev))
     if jpg_prev is False:
-        shutil.rmtree(tmp_folder, ignore_errors=True)
+        shutil.rmtree(tmp_folder)
         return False
     # jpg_prev = jpgpreview_zoom(file_id, folder_id, main_file_path, logger)
     jpg_prev = jpgpreview_zoom(file_id, folder_id, tmp_folder_file, logger)
@@ -1103,7 +1107,7 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
         logger.error("Request: {}".format(str(r.request)))
         logger.error("Headers: {}".format(r.headers))
         logger.error("Payload: {}".format(payload))
-        shutil.rmtree(tmp_folder, ignore_errors=True)
+        shutil.rmtree(tmp_folder)
         return False
     # Get exif from TIF
     logger.info("file_exif_pre: {}".format(main_file_path))
@@ -1126,7 +1130,7 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
         logger.error("Request: {}".format(str(r.request)))
         logger.error("Headers: {}".format(r.headers))
         logger.error("Payload: {}".format(payload))
-        shutil.rmtree(tmp_folder, ignore_errors=True)
+        shutil.rmtree(tmp_folder)
         return False
     logger.info("Running checks on file {} ({}; folder_id: {})".format(filename_stem, file_id, folder_id))
     # Run each check
@@ -1191,7 +1195,7 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
             logger.error("Request: {}".format(str(r.request)))
             logger.error("Headers: {}".format(r.headers))
             logger.error("Payload: {}".format(payload))
-            shutil.rmtree(tmp_folder, ignore_errors=True)
+            shutil.rmtree(tmp_folder)
             return False
         # MD5 of RAW file
         if check_results == 0:
@@ -1211,7 +1215,7 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
                 logger.error("Request: {}".format(str(r.request)))
                 logger.error("Headers: {}".format(r.headers))
                 logger.error("Payload: {}".format(payload))
-                shutil.rmtree(tmp_folder, ignore_errors=True)
+                shutil.rmtree(tmp_folder)
                 return False
             # Raw file size
             file_size = os.path.getsize(raw_file)
@@ -1231,7 +1235,7 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
                 logger.error("Request: {}".format(str(r.request)))
                 logger.error("Headers: {}".format(r.headers))
                 logger.error("Payload: {}".format(payload))
-                shutil.rmtree(tmp_folder, ignore_errors=True)
+                shutil.rmtree(tmp_folder)
                 return False
     if 'jhove' in project_checks:
         file_check = 'jhove'
@@ -1254,7 +1258,7 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
             logger.error("Request: {}".format(str(r.request)))
             logger.error("Headers: {}".format(r.headers))
             logger.error("Payload: {}".format(payload))
-            shutil.rmtree(tmp_folder, ignore_errors=True)
+            shutil.rmtree(tmp_folder)
             return False
     if 'filename' in project_checks:
         file_check = 'filename'
@@ -1275,7 +1279,7 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
             logger.error("Request: {}".format(str(r.request)))
             logger.error("Headers: {}".format(r.headers))
             logger.error("Payload: {}".format(payload))
-            shutil.rmtree(tmp_folder, ignore_errors=True)
+            shutil.rmtree(tmp_folder)
             return False
     if 'tifpages' in project_checks:
         file_check = 'tifpages'
@@ -1300,7 +1304,7 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
             logger.error("Request: {}".format(str(r.request)))
             logger.error("Headers: {}".format(r.headers))
             logger.error("Payload: {}".format(payload))
-            shutil.rmtree(tmp_folder, ignore_errors=True)
+            shutil.rmtree(tmp_folder)
             return False
     if 'magick' in project_checks:
         file_check = 'magick'
@@ -1308,7 +1312,7 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
         # check_results, check_info = magick_validate(main_file_path)
         if check_results != 0:
             logger.error("magick error: {}".format(check_info))
-            shutil.rmtree(tmp_folder, ignore_errors=True)
+            shutil.rmtree(tmp_folder)
             return False
         payload = {'type': 'file',
                    'property': 'filechecks',
@@ -1324,7 +1328,7 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
         query_results = json.loads(r.text.encode('utf-8'))
         if query_results["result"] is not True:
             logger.error("API Returned Error: {}".format(query_results))
-            shutil.rmtree(tmp_folder, ignore_errors=True)
+            shutil.rmtree(tmp_folder)
             return False
     if 'tif_compression' in project_checks:
         file_check = 'tif_compression'
@@ -1349,8 +1353,8 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
             logger.error("Request: {}".format(str(r.request)))
             logger.error("Headers: {}".format(r.headers))
             logger.error("Payload: {}".format(payload))
-            shutil.rmtree(tmp_folder, ignore_errors=True)
+            shutil.rmtree(tmp_folder)
             return False
-    shutil.rmtree(tmp_folder, ignore_errors=True)
+    shutil.rmtree(tmp_folder)
     return True
 

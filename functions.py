@@ -924,7 +924,6 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
     file_name = Path(filename).name
     # Copy to tmp folder
     tmp_folder = "{}/osprey_{}".format(settings.tmp_folder, random.randint(100,10000))
-    os.mkdir(tmp_folder)
     try:
         os.mkdir(tmp_folder)
     except FileExistsError as error:

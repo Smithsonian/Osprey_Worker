@@ -16,6 +16,7 @@ import locale
 import itertools
 import hashlib
 from multiprocessing import Pool
+import pytesseract
 
 # Zoom images
 import si_deepzoom as deepzoom
@@ -62,6 +63,26 @@ def compress_log():
         shutil.rmtree(file)
     os.chdir(filecheck_dir)
     return True
+
+
+def send_request(url, payload, logger, log_res = True):
+    """
+    Execute request to API
+    """
+    try:
+        logger.info("send_request: {}|{}".format(url, payload))        
+        r = requests.post(url, data=payload)
+        results = json.loads(r.text.encode('utf-8'))
+        if r.status_code == 200:
+            if log_res:
+                logger.info("send_request_res: {}".format(results))
+            return results
+        else:
+            logger.error("send_request: {}|{}|{}".format(url, payload, r.headers))
+            return False
+    except:
+        logger.error("send_request: {}|{}|{}".format(url, payload, r.headers))
+        return False
 
 
 def jhove_validate(file_path):
@@ -248,6 +269,24 @@ def tif_compression(file_path):
     return check_results, check_info
 
 
+def tesseract(file_path):
+    """
+    Check if the text in the image has correct orientation and extract text with tesseract
+    """
+    img = Image.open(file_path)
+    try:
+        osd = pytesseract.image_to_osd(img, output_type='dict')
+    except pytesseract.pytesseract.TesseractError as e:
+        return 0, "Tesseract error: {}".format(e)
+    if osd['rotate'] != 0 and osd['orientation_conf'] > 0.5:
+        check_results = 1
+        check_info = "rotation:{}({})|{}".format(osd['rotate'], osd['orientation_conf'], pytesseract.pytesseract.image_to_string(img.rotate(osd['rotate'])).lstrip().rstrip().encode('utf-8'))
+    else:
+        check_results = 0
+        check_info = "rotation:{}({})|{}".format(osd['rotate'], osd['orientation_conf'], pytesseract.pytesseract.image_to_string(img).lstrip().rstrip().encode('utf-8'))
+    return check_results, check_info
+
+
 def tifpages(file_path):
     """
     Check if TIF has multiple pages using Pillow
@@ -286,32 +325,22 @@ def get_filemd5(filepath, logger):
                 md5_hash.update(byte_block)
         file_md5 = md5_hash.hexdigest()
     else:
-        file_md5 = ""
+        return False
     return file_md5
 
 
-def file_pair_check(file_id, filename, derivative_path, derivative_type):
+def file_pair_check(filename, raw_files):
     """
     Check if a file has a pair (main + raw)
     """
     file_stem = Path(filename).stem
     # Check if file pair is present
-    derivative_file = glob.glob("{}/{}.*".format(derivative_path, file_stem))
-    if len(derivative_file) == 1:
-        derivative_file = derivative_file[0]
-        file_pair = 0
-        file_pair_info = "Raw file {} found for {} ({})".format(Path(derivative_file).name, filename, file_id)
-    elif len(derivative_file) == 0:
-        derivative_file = None
-        # Raw file is missing
-        file_pair = 1
-        file_pair_info = "Missing raw file for {} ({})".format(filename, file_id)
-    else:
-        derivative_file = None
-        # Raw file is missing
-        file_pair = 1
-        file_pair_info = "Multiple raw files for {} ({})".format(filename, file_id)
-    return file_pair, file_pair_info, derivative_file
+    pair_files = []
+    for rfile in raw_files:
+        if file_stem == Path(rfile).stem:
+            # Raw found
+            pair_files.append(rfile)
+    return pair_files
 
 
 def jpgpreview(file_id, folder_id, file_path, logger):
@@ -382,7 +411,7 @@ def jpgpreview_zoom(file_id, folder_id, file_path, logger):
     return True
 
 
-def md5sum(md5_file, file):
+def md5sum(md5_hashes, file):
     # https://stackoverflow.com/a/7829658
     filename = Path(file).name
     md5_hash = hashlib.md5()
@@ -391,23 +420,33 @@ def md5sum(md5_file, file):
         for byte_block in iter(lambda: f.read(4096), b""):
             md5_hash.update(byte_block)
     file_md5 = md5_hash.hexdigest()
-    md5_from_file = md5_file[md5_file.file == filename]['md5'].to_string(index=False).strip()
-    if file_md5 == md5_from_file:
-        return 0
-    elif md5_from_file == 'Series([], )':
-        return 1
-    else:
+    try:
+        md5_from_file = md5_hashes.loc[md5_hashes['file'] == filename, 'md5'].item()
+    except ValueError:
+        try:
+            md5_from_file = md5_hashes.loc[md5_hashes['filename'] == filename, 'md5'].item()
+        except ValueError:
+            # An error getting or matching the value
+            return 1
+    try:
+        if file_md5.upper() == md5_from_file.upper():
+            return 0
+        elif md5_from_file == 'Series([], )':
+            return 1
+        else:
+            return 1
+    except AttributeError:
         return 1
 
 
-def check_md5(md5_file, files):
+def check_md5(md5_hashes, files):
     """
     Compare hashes between files and what the md5 file says
     :param md5_file:
     :param files:
     :return:
     """
-    inputs = zip(itertools.repeat(md5_file), files)
+    inputs = zip(itertools.repeat(md5_hashes), files)
     with Pool(settings.no_workers) as pool:
         bad_files = pool.starmap(md5sum, inputs)
         pool.close()
@@ -418,33 +457,27 @@ def check_md5(md5_file, files):
         return 0, 0
 
 
-def validate_md5(folder_path):
+def validate_md5(md5_files, files):
     """
-    Check if the MD5 file is valid
+    Check if the MD5 files are valid
     """
-    md5_file = glob.glob("{}/*.md5".format(folder_path))
-    if len(md5_file) == 0:
-        exit_msg = "MD5 file not found"
-        return 1, exit_msg
-    if len(md5_file) > 1:
-        exit_msg = "Multiple MD5 files found"
-        return 1, exit_msg
-    else:
+    md5_hashes = pd.DataFrame(columns=['md5', 'file'])
+    for md5f in md5_files:
         # Read md5 file
-        md5_file = pd.read_csv(md5_file[0], sep=' ', header=None, names=['md5', 'file'])
-    files = glob.glob("{}/*".format(folder_path))
-    # Exclude md5 file
-    files = [x for x in files if '.md5' not in x]
-    if len(files) != md5_file.shape[0]:
-        exit_msg = "No. of files ({}) mismatch MD5 file ({})".format(len(files), md5_file.shape[0])
+        # md5_hashes = pd.concat([md5_hashes, pd.read_csv(md5f, sep=' ', header=None, names=['md5', 'file'])], ignore_index=True, sort=False)
+        md5_hashes = pd.concat([md5_hashes, pd.read_csv(md5f, sep='\s+', header=None, names=['md5', 'file'])], ignore_index=True, sort=False)
+    if len(files) != md5_hashes.shape[0]:
+        exit_msg = "No. of files ({}) mismatch MD5 file ({})".format(len(files), md5_hashes.shape[0])
         return 1, exit_msg
-    res, results = check_md5(md5_file, files)
+    md5_hashes['filename'] = md5_hashes.apply(lambda row: Path(row.file).name, axis=1)
+    res, results = check_md5(md5_hashes, files)
     if res == 0:
         exit_msg = "Valid MD5"
         return 0, exit_msg
     else:
         exit_msg = results
         return 1, exit_msg
+
 
 
 def update_folder_stats(folder_id, logger):
@@ -457,17 +490,12 @@ def update_folder_stats(folder_id, logger):
                'property': 'stats',
                'value': '0'
                }
-    r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
-                      data=payload)
-    query_results = json.loads(r.text.encode('utf-8'))
-    logger.info("update_folder_stats: {}".format(query_results))
-    if query_results["result"] is not True:
-        logger.error("API Returned Error: {}".format(query_results))
-        logger.error("Request: {}".format(str(r.request)))
-        logger.error("Headers: {}".format(r.headers))
-        logger.error("Payload: {}".format(payload))
+    r = send_request('{}/api/update/{}'.format(settings.api_url, settings.project_alias), payload, logger)
+    if r is False:
+        logger.error(r)
         return False
-    return True
+    else:
+        return True
 
 
 def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
@@ -476,37 +504,19 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
     """
     project_id = project_info['project_alias']
     default_payload = {'api_key': settings.api_key}
-    r = requests.post('{}/api/projects/{}'.format(settings.api_url, settings.project_alias), data=default_payload)
-    if r.status_code != 200:
-        # Something went wrong
-        query_results = r.text.encode('utf-8')
-        logger.error("API Returned Error: {}".format(query_results))
+    project_info = send_request('{}/api/projects/{}'.format(settings.api_url, settings.project_alias), default_payload, logger, log_res = False)
+    if project_info == False:
         return False
-    project_info = json.loads(r.text.encode('utf-8'))
     project_checks = project_info['project_checks']
     logger.info("Processing folder: {}".format(folder_path))
     folder_name = os.path.basename(folder_path)
-    # MD5 required?
-    if settings.md5_required:
-        if 'raw_pair' in project_checks:
-            if len(glob.glob(folder_path + "/" + settings.raw_files_path + "/*.md5")) == 1:
-                md5_raw_exists = 0
-            else:
-                logger.info("Folder {} is missing md5 files".format(folder_path))
-                return False
-        # Check if MD5 exists in tif folder
-            if len(glob.glob(folder_path + "/" + settings.main_files_path + "/*.md5")) == 1:
-                md5_exists = 0
-            else:
-                logger.info("Folder {} is missing md5 files".format(folder_path))
-                return False
     # Check if the folder exists in the database
     folder_id = None
     if len(project_info['folders']) > 0:
         for folder in project_info['folders']:
             logger.info("folder: {}".format(folder))
             logger.info("FOLDER NEW: {}|{}|{}|{}|{}|{}".format(folder['folder'], folder_name, folder['folder_path'], folder_path, folder['folder'] == folder_name, folder['folder_path'] == folder_path))
-            if folder['folder'] == folder_name and folder['folder_path'] == folder_path:
+            if folder['folder'] == folder_name: # and folder['folder_path'] == folder_path:
                 folder_info = folder
                 folder_id = folder_info['folder_id']
                 delivered_to_dams = folder_info['delivered_to_dams']
@@ -524,18 +534,11 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
             'folder_date': folder_date,
             'project_id': project_info['project_id']
         }
-        r = requests.post('{}/api/new/{}'.format(settings.api_url, settings.project_alias),
-                          data=payload)
-        query_results = json.loads(r.text.encode('utf-8'))
-        logger.info("Creating folder record: {} - {} - {}".format(folder_path, payload, query_results))
-        if query_results["result"] == "error":
-            logger.error("API Returned Error: {}".format(query_results))
-            logger.error("Request: {}".format(str(r.request)))
-            logger.error("Headers: {}".format(r.headers))
-            logger.error("Payload: {}".format(payload))
+        r = send_request('{}/api/new/{}'.format(settings.api_url, settings.project_alias), payload, logger)
+        if r is False:
             return False
         else:
-            folder_id = query_results["result"][0]['folder_id']
+            folder_id = r["result"][0]['folder_id']
             delivered_to_dams = 9
     # if folder_id is None:
     if 'folder_id' not in locals():
@@ -547,19 +550,16 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
         logger.info("Folder ready for or delivered to for DAMS, skipping {}".format(folder_path))
         return folder_id
     # Check if QC has been run
-    r = requests.post('{}/api/folders/{}'.format(settings.api_url, folder_id), data=default_payload)
-    if r.status_code != 200:
-        # Something went wrong
-        logger.error(
-            "API ({}) Returned Error: {}".format('{}/api/folders/{}'.format(settings.api_url, folder_id), r.text))
-        logger.error("Request: {}".format(str(r.request)))
-        logger.error("Headers: {}".format(r.headers))
-        logger.error("Payload: {}".format(default_payload))
-        return folder_id
-    folder_info = json.loads(r.text.encode('utf-8'))
+    folder_info = send_request('{}/api/folders/{}'.format(settings.api_url, folder_id), default_payload, logger, log_res = False)
+    if folder_info is False:
+        return False
     if folder_info['qc_status'] != "QC Pending":
         # QC done, so skip
         logger.info("Folder QC has been completed, skipping {}".format(folder_path))
+        return folder_id
+    if folder_info['status'] == 0 and folder_info['file_errors'] == 0 and settings.run_once is True:
+        # Folder done, so skip
+        logger.info("Folder has been completed, skipping {}".format(folder_path))
         return folder_id
     # Tag folder as under verification
     payload = {'type': 'folder',
@@ -568,37 +568,68 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
                'property': 'checking_folder',
                'value': 1
                }
-    r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
-                      data=payload)
-    query_results = json.loads(r.text.encode('utf-8'))
-    if query_results["result"] is not True:
-        logger.error("API Returned Error: {}".format(query_results))
-        logger.error("Request: {}".format(str(r.request)))
-        logger.error("Headers: {}".format(r.headers))
-        logger.error("Payload: {}".format(payload))
-        return folder_id
+    r = send_request('{}/api/update/{}'.format(settings.api_url, settings.project_alias), payload, logger)
+    if r is False:
+        return False
+    # Get all files in folder
+    # files = glob.glob(folder_path, recursive=True)
+    files = []
+    for root, d_names, f_names in os.walk(folder_path):
+        for f in f_names:
+            files.append(os.path.join(root, f))
+    # Extraneous files?
+    image_files = []
+    image_main_files = []
+    md5_allowed_files = []
+    if 'raw_pair' in project_checks:
+        allowed_files = [settings.md5_file, settings.main_files, settings.raw_files]
+        allowed_image_files = [settings.main_files, settings.raw_files]
+        md5_files = [settings.main_files, settings.raw_files]
+    else:
+        allowed_files = [settings.md5_file, settings.main_files]
+        allowed_image_files = [settings.main_files]
+        md5_files = [settings.main_files]
+    if settings.data_files != None:
+        allowed_files = [settings.md5_file, settings.main_files, settings.data_files]
+        md5_files = [settings.main_files, settings.data_files]
+    for file in files:
+        if Path(file).suffix not in allowed_files:
+            payload = {'type': 'folder', 'folder_id': folder_id, 'api_key': settings.api_key, 'property': 'status1', 'value': 'Extraneous files'}
+            r = send_request('{}/api/update/{}'.format(settings.api_url, settings.project_alias), payload, logger)
+            if r is False:
+                return False
+            return False
+        else:
+            if Path(file).suffix in md5_files:
+                md5_allowed_files.append(file)
+            if Path(file).suffix in allowed_image_files:
+                image_files.append(file)
+            if Path(file).suffix == settings.main_files:
+                image_main_files.append(file)
     # Check for deleted files
     for file in folder_info['files']:
-        if len(glob.glob("{}/{}/{}.*".format(folder_path, settings.main_files_path, file['file_name']))) != 1:
+        total = 0
+        for f in image_main_files:
+            f_name = Path(f).stem
+            if f_name == file['file_name']:
+                total += 1
+        if total == 0:
             # File not found, delete from db
             payload = {'type': 'file',
-                       'file_id': file['file_id'],
-                       'api_key': settings.api_key,
-                       'property': 'delete',
-                       'value': True
-                       }
-            r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
-                              data=payload)
-            query_results = json.loads(r.text.encode('utf-8'))
-            if query_results["result"] is not True:
-                logger.error("API Returned Error: {}".format(query_results))
-                logger.error("Request: {}".format(str(r.request)))
-                logger.error("Headers: {}".format(r.headers))
-                logger.error("Payload: {}".format(payload))
-                return folder_id
-    # Check if filename has spaces
-    folder_full_path = "{}/{}".format(folder_path, settings.main_files_path)
-    files = glob.glob("{}/*.*".format(folder_full_path))
+                    'file_id': file['file_id'],
+                    'api_key': settings.api_key,
+                    'property': 'delete',
+                    'value': True
+                    }
+            r = send_request('{}/api/update/{}'.format(settings.api_url, settings.project_alias), payload, logger)
+            if r is False:
+                return False
+        elif total > 1:
+            payload = {'type': 'folder', 'folder_id': folder_id, 'api_key': settings.api_key, 'property': 'status1', 'value': 'Dupe file in folder ({})'.format(f_name)}
+            r = send_request('{}/api/update/{}'.format(settings.api_url, settings.project_alias), payload, logger)
+            if r is False:
+                return False
+    # Check if filenames have spaces
     for file in files:
         if " " in file:
             payload = {'type': 'folder',
@@ -607,298 +638,137 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
                'property': 'filename_spaces',
                'value': 1
                }
-            r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
-                            data=payload)
-            query_results = json.loads(r.text.encode('utf-8'))
-            if query_results["result"] is not True:
-                logger.error("API Returned Error: {}".format(query_results))
-                logger.error("Request: {}".format(str(r.request)))
-                logger.error("Headers: {}".format(r.headers))
-                logger.error("Payload: {}".format(payload))
-            return folder_id
-    if 'raw_pair' in project_checks:
-        # Check if filename in raws have spaces
-        folder_full_path = "{}/{}".format(folder_path, settings.raw_files_path)
-        files = glob.glob("{}/*.*".format(folder_full_path))
-        for file in files:
-            if " " in file:
-                payload = {'type': 'folder',
-                'folder_id': folder_id,
-                'api_key': settings.api_key,
-                'property': 'filename_spaces',
-                'value': 1
-                }
-                r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
-                                data=payload)
-                query_results = json.loads(r.text.encode('utf-8'))
-                if query_results["result"] is not True:
-                    logger.error("API Returned Error: {}".format(query_results))
-                    logger.error("Request: {}".format(str(r.request)))
-                    logger.error("Headers: {}".format(r.headers))
-                    logger.error("Payload: {}".format(payload))
-                return folder_id
-    # Check if MD5 exists in tif folder
-    if len(glob.glob(folder_path + "/" + settings.main_files_path + "/*.md5")) == 1:
-        md5_exists = 0
-    else:
-        md5_exists = 1
-    payload = {'type': 'folder',
-               'folder_id': folder_id,
-               'api_key': settings.api_key,
-               'property': 'tif_md5_exists',
-               'value': md5_exists
-               }
-    r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
-                      data=payload)
-    query_results = json.loads(r.text.encode('utf-8'))
-    if query_results["result"] is not True:
-        logger.error("API Returned Error: {}".format(query_results))
-        logger.error("Request: {}".format(str(r.request)))
-        logger.error("Headers: {}".format(r.headers))
-        logger.error("Payload: {}".format(payload))
-        return folder_id
-    # Check if the MD5 file matches the contents of the folder
-    if md5_exists == 0:
-        md5_check, md5_error = validate_md5(folder_path + "/" + settings.main_files_path)
+            r = send_request('{}/api/update/{}'.format(settings.api_url, settings.project_alias), payload, logger)
+            if r is False:
+                return False
+    # MD5 required?
+    if settings.md5_required:
+        md5_files = []
+        for f in files:
+            if Path(f).suffix == settings.md5_file:
+                md5_files.append(f)
+        # Check if MD5 exists in tif folder
+        if len(md5_files) == 0:
+            folder_status_msg = "MD5 files missing"
+            payload = {'type': 'folder', 'folder_id': folder_id, 'api_key': settings.api_key, 'property': 'status1', 'value': folder_status_msg}
+            r = send_request('{}/api/update/{}'.format(settings.api_url, settings.project_alias), payload, logger)
+            if r is False:
+                return False
+        # Check if the MD5 file matches the contents of the folder
+        md5_check, md5_error = validate_md5(md5_files, md5_allowed_files)
         if md5_check == 0:
             property = 'tif_md5_matches_ok'
         else:
             property = 'tif_md5_matches_error'
         payload = {'type': 'folder',
-                   'folder_id': folder_id,
-                   'api_key': settings.api_key,
-                   'property': property,
-                   'value': md5_error
-                   }
-        r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
-                          data=payload)
-        query_results = json.loads(r.text.encode('utf-8'))
-        if query_results["result"] is not True:
-            logger.error("API Returned Error: {}".format(query_results))
-            logger.error("Request: {}".format(str(r.request)))
-            logger.error("Headers: {}".format(r.headers))
-            logger.error("Payload: {}".format(payload))
-            return folder_id
-    # Check if MD5 exists in raw folder
-    if 'raw_pair' in project_checks:
-        if len(glob.glob(folder_path + "/" + settings.raw_files_path + "/*.md5")) == 1:
-            md5_raw_exists = 0
-        else:
-            md5_raw_exists = 1
-        payload = {'type': 'folder',
                 'folder_id': folder_id,
                 'api_key': settings.api_key,
-                'property': 'raw_md5_exists',
-                'value': md5_raw_exists
+                'property': property,
+                'value': md5_error
                 }
-        r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
-                        data=payload)
-        query_results = json.loads(r.text.encode('utf-8'))
-        if query_results["result"] is not True:
-            logger.error("API Returned Error: {}".format(query_results))
-            logger.error("Request: {}".format(str(r.request)))
-            logger.error("Headers: {}".format(r.headers))
-            logger.error("Payload: {}".format(payload))
-            return folder_id
-        # Check if the MD5 file of RAWS matches the contents of the folder
-        if md5_raw_exists == 0:
-            md5_check, md5_error = validate_md5(folder_path + "/" + settings.raw_files_path)
-            if md5_check == 0:
-                property = 'raw_md5_matches_ok'
-            else:
-                property = 'raw_md5_matches_error'
-            payload = {'type': 'folder',
-                    'folder_id': folder_id,
-                    'api_key': settings.api_key,
-                    'property': property,
-                    'value': md5_error
-                    }
-            r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
-                            data=payload)
-            query_results = json.loads(r.text.encode('utf-8'))
-            if query_results["result"] is not True:
-                logger.error("API Returned Error: {}".format(query_results))
-                logger.error("Request: {}".format(str(r.request)))
-                logger.error("Headers: {}".format(r.headers))
-                logger.error("Payload: {}".format(payload))
-                return folder_id
+        r = send_request('{}/api/update/{}'.format(settings.api_url, settings.project_alias), payload, logger)
+        if r is False:
+            return False
+        payload = {'type': 'folder', 'folder_id': folder_id, 'api_key': settings.api_key, 'property': 'status1', 'value': md5_error}
+        if md5_check != 0:
+            r = send_request('{}/api/update/{}'.format(settings.api_url, settings.project_alias), payload, logger)
+            if r is False:
+                return False
+    if 'raw_pair' in project_checks:
+        raw_files = [file for file in files if Path(file).suffix == settings.raw_files]
+        if len(image_main_files) != len(raw_files):
+            folder_status_msg = "No. of files do not match (main: {}, raws: {})".format(len(image_main_files), len(raw_files))
+            payload = {'type': 'folder', 'folder_id': folder_id, 'api_key': settings.api_key, 'property': 'status1',
+                        'value': folder_status_msg}
+            r = send_request('{}/api/update/{}'.format(settings.api_url, settings.project_alias), payload, logger)
+            if r is False:
+                return False
     else:
-        md5_raw_exists = 0
-    if settings.md5_required:
-        if md5_exists == 1 or md5_raw_exists == 1:
-            # Folder is missing md5 files
-            logger.info("Folder {} is missing md5 files".format(folder_path))
-            # Update folder stats
-            update_folder_stats(folder_id, logger)
-            return folder_id
-    payload = {'type': 'folder', 'folder_id': folder_id, 'api_key': settings.api_key, 'property': 'status0',
-               'value': ''}
-    r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
-                      data=payload)
-    query_results = json.loads(r.text.encode('utf-8'))
-    if query_results["result"] is not True:
-        logger.error("API Returned Error: {}".format(query_results))
-        logger.error("Request: {}".format(str(r.request)))
-        logger.error("Headers: {}".format(r.headers))
-        logger.error("Payload: {}".format(payload))
-        return folder_id
-    if os.path.isdir("{}/{}".format(folder_path, settings.main_files_path)) is False:
-        folder_status_msg = "Missing MAIN folder in {}".format(folder_path)
-        logger.info(folder_status_msg)
-        payload = {'type': 'folder', 'folder_id': folder_id, 'api_key': settings.api_key, 'property': 'status9',
-                   'value': folder_status_msg}
-        r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
-                          data=payload)
-        query_results = json.loads(r.text.encode('utf-8'))
-        if query_results["result"] is not True:
-            logger.error("API Returned Error: {}".format(query_results))
-            logger.error("Request: {}".format(str(r.request)))
-            logger.error("Headers: {}".format(r.headers))
-            logger.error("Payload: {}".format(payload))
-            return folder_id
-        return folder_id
+        raw_files = []
+    # Create subfolder if it doesn't exists
+    if len(image_main_files) > 0:
+        preview_file_path = "{}/folder{}".format(settings.jpg_previews, str(folder_id))
+        if not os.path.exists(preview_file_path):
+            os.makedirs(preview_file_path)
+    ###############
+    # Parallel
+    ###############
+    no_tasks = len(image_main_files)
+    if settings.no_workers == 1:
+        print_str = "Started run of {notasks} tasks for {folder_path}"
+        print_str = print_str.format(notasks=str(locale.format_string("%d", no_tasks, grouping=True)), folder_path=folder_path)
+        logger.info(print_str)
+        # Process files in parallel
+        for file in image_main_files:
+            res = process_image_p(file, folder_id, raw_files, logfile_folder)
+            if res is False:
+                return False
     else:
-        logger.info("MAIN folder found in {}".format(folder_path))
-        folder_full_path = "{}/{}".format(folder_path, settings.main_files_path)
-        folder_full_path_files = glob.glob("{}/*".format(folder_full_path))
-        folder_full_path_files = [file for file in folder_full_path_files if Path(file).suffix != '.md5']
-        if 'raw_pair' in project_checks:
-            folder_raw_path = "{}/{}".format(folder_path, settings.raw_files_path)
-            folder_raw_path_files = glob.glob("{}/*".format(folder_raw_path))
-            folder_raw_path_files = [file for file in folder_raw_path_files if Path(file).suffix != '.md5']
-            if len(folder_full_path_files) != len(folder_raw_path_files):
-                folder_status_msg = "No. of files do not match (main: {}, raws: {})".format(len(folder_full_path_files), len(folder_raw_path_files))
-                payload = {'type': 'folder', 'folder_id': folder_id, 'api_key': settings.api_key, 'property': 'status1',
-                           'value': folder_status_msg}
-                r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
-                                  data=payload)
-                query_results = json.loads(r.text.encode('utf-8'))
-                if query_results["result"] is not True:
-                    logger.error("API Returned Error: {}".format(query_results))
-                    logger.error("Request: {}".format(str(r.request)))
-                    logger.error("Headers: {}".format(r.headers))
-                    logger.error("Payload: {}".format(payload))
-                    return folder_id
-            else:
-                payload = {'type': 'folder', 'folder_id': folder_id, 'api_key': settings.api_key, 'property': 'status0',
-                           'value': ""}
-                r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias), data=payload)
-                query_results = json.loads(r.text.encode('utf-8'))
-                if query_results["result"] is not True:
-                    logger.error("API Returned Error: {}".format(query_results))
-                    logger.error("Request: {}".format(str(r.request)))
-                    logger.error("Headers: {}".format(r.headers))
-                    logger.error("Payload: {}".format(payload))
-                    return folder_id
-        else:
-            payload = {'type': 'folder', 'folder_id': folder_id, 'api_key': settings.api_key, 'property': 'status0',
-                       'value': ""}
-            r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias), data=payload)
-            query_results = json.loads(r.text.encode('utf-8'))
-            if query_results["result"] is not True:
-                logger.error("API Returned Error: {}".format(query_results))
-                logger.error("Request: {}".format(str(r.request)))
-                logger.error("Headers: {}".format(r.headers))
-                logger.error("Payload: {}".format(payload))
-                return folder_id
-        # Get all files in the folder
-        files = glob.glob("{}/*.*".format(folder_full_path))
-        # Remove md5 files from list
-        files = [file for file in files if Path(file).suffix != '.md5']
-        if len(files) > 0:
-            preview_file_path = "{}/folder{}".format(settings.jpg_previews, str(folder_id))
-            # Create subfolder if it doesn't exists
-            if not os.path.exists(preview_file_path):
-                os.makedirs(preview_file_path)
-        ###############
-        # Parallel
-        ###############
-        no_tasks = len(files)
-        if settings.no_workers == 1:
-            print_str = "Started run of {notasks} tasks for {folder_path}"
-            print_str = print_str.format(notasks=str(locale.format_string("%d", no_tasks, grouping=True)), folder_path=folder_path)
-            logger.info(print_str)
-            # Process files in parallel
-            for file in files:
-                res = process_image_p(file, folder_path, folder_id, project_id, logfile_folder)
-                if res is False:
-                    return False
-        else:
-            print_str = "Started parallel run of {notasks} tasks on {workers} workers for {folder_path}"
-            print_str = print_str.format(notasks=str(locale.format_string("%d", no_tasks, grouping=True)), workers=str(
-                settings.no_workers), folder_path=folder_path)
-            logger.info(print_str)
-            # Process files in parallel
-            inputs = zip(files, itertools.repeat(folder_path), itertools.repeat(folder_id), itertools.repeat(project_id), itertools.repeat(logfile_folder))
-            with Pool(settings.no_workers) as pool:
-                pool.starmap(process_image_p, inputs)
-                pool.close()
-                pool.join()
+        print_str = "Started parallel run of {notasks} tasks on {workers} workers for {folder_path}"
+        print_str = print_str.format(notasks=str(locale.format_string("%d", no_tasks, grouping=True)), workers=str(
+            settings.no_workers), folder_path=folder_path)
+        logger.info(print_str)
+        # Process files in parallel
+        inputs = zip(image_main_files, itertools.repeat(folder_id), itertools.repeat(raw_files), itertools.repeat(logfile_folder))
+        with Pool(settings.no_workers) as pool:
+            pool.starmap(process_image_p, inputs)
+            pool.close()
+            pool.join()
     # Run end-of-folder checks
     if 'sequence' in project_checks:
-        no_tasks = len(files)
-        r = requests.post('{}/api/projects/{}/files'.format(settings.api_url, project_id), data=default_payload)
-        if r.status_code != 200:
-            # Something went wrong
-            logger.error(
-                "API ({}) Returned Error: {}".format('{}/api/folders/{}'.format(settings.api_url, folder_id), r.text))
-            logger.error("Request: {}".format(str(r.request)))
-            logger.error("Headers: {}".format(r.headers))
-            logger.error("Payload: {}".format(default_payload))
-            return folder_id
-        project_files = json.loads(r.text.encode('utf-8'))
+        no_tasks = len(image_main_files)
+        project_files = send_request('{}/api/projects/{}/files'.format(settings.api_url, settings.project_alias), default_payload, logger, log_res = False)
+        if project_files is False:
+            return False
         if settings.no_workers == 1:
             print_str = "Started run of {notasks} tasks for 'sequence'"
             print_str = print_str.format(notasks=str(locale.format_string("%d", no_tasks, grouping=True)))
             logger.info(print_str)
             # Process files in parallel
-            for file in files:
+            for file in image_main_files:
                 sequence_validate(file, folder_id, project_files)
         else:
             print_str = "Started parallel run of {notasks} tasks on {workers} workers for 'sequence'"
-            print_str = print_str.format(notasks=str(locale.format_string("%d", no_tasks, grouping=True)), workers=str(
-                settings.no_workers))
+            print_str = print_str.format(notasks=str(locale.format_string("%d", no_tasks, grouping=True)), workers=str(settings.no_workers))
             logger.info(print_str)
             # Process files in parallel
-            inputs = zip(files, itertools.repeat(folder_id), itertools.repeat(project_files))
+            inputs = zip(image_main_files, itertools.repeat(folder_id), itertools.repeat(project_files))
             with Pool(settings.no_workers) as pool:
                 pool.starmap(sequence_validate, inputs)
                 pool.close()
                 pool.join()
     # Verify numbers match
-    r = requests.post('{}/api/folders/{}'.format(settings.api_url, folder_id), data=default_payload)
-    if r.status_code != 200:
-        # Something went wrong
-        query_results = r.text.encode('utf-8')
-        logger.error("API Returned Error: {}".format(query_results))
-        return False
-    folder_info = json.loads(r.text.encode('utf-8'))
-    if folder_info['file_errors'] == 0:
-        no_files_api = len(folder_info['files'])
-        folder_full_path = "{}/{}".format(folder_path, settings.main_files_path)
-        files = glob.glob("{}/*.*".format(folder_full_path))
-        files = [file for file in files if Path(file).suffix != '.md5']
-        no_files_main = len(files)
-        logger.info("Folder numbers match: (folder_id:{}) {}/{}".format(folder_id, no_files_main, len(files)))
-        if no_files_api != no_files_main:
-            logger.error("Files in system ({}) do not match files in API ()".format(no_files_main, no_files_api))
-            payload = {'type': 'folder', 'folder_id': folder_id, 'api_key': settings.api_key, 'property': 'status1', 'value': "System error"}
-            r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
-                                data=payload)
-            query_results = json.loads(r.text.encode('utf-8'))
-            if query_results["result"] is not True:
-                logger.error("API Returned Error: {}".format(query_results))
-                logger.error("Request: {}".format(str(r.request)))
-                logger.error("Headers: {}".format(r.headers))
-                logger.error("Payload: {}".format(payload))
-                return folder_id
+    logger.info("Folder count verification {}".format(folder_id))
+    folder_info = send_request('{}/api/folders/{}'.format(settings.api_url, folder_id), default_payload, logger, log_res = False)
+    # if folder_info['file_errors'] == 0:
+    no_files_api = len(folder_info['files'])
+    no_files_main = len(image_main_files)
+    logger.info("Folder numbers match: (folder_id:{}) {}/{}".format(folder_id, no_files_main, no_files_api))
+    if no_files_api != no_files_main:
+        logger.error("Files in system ({}) do not match files in API ({})".format(no_files_main, no_files_api))
+        payload = {'type': 'folder', 'folder_id': folder_id, 'api_key': settings.api_key, 'property': 'status1', 'value': "System error"}
+        r = send_request('{}/api/update/{}'.format(settings.api_url, settings.project_alias), payload, logger)
+        if r["result"] is not True:
+            return False
+    else:
+        logger.info("Files in system ({}) match files in API ({}) (folder_id:{})".format(no_files_main, no_files_api, folder_id))
+        payload = {'type': 'folder', 'folder_id': folder_id, 'api_key': settings.api_key, 'property': 'status0', 'value': ""}
+        r = send_request('{}/api/update/{}'.format(settings.api_url, settings.project_alias), payload, logger)
+        if r is False:
+            return False
     # Update folder stats
     update_folder_stats(folder_id, logger)
+    # If same server, set previews as ready
+    if settings.previews is True:
+        payload = {'type': 'folder', 'folder_id': folder_id, 'api_key': settings.api_key, 'property': 'previews', 'value': '0'}
+        r = send_request('{}/api/update/{}'.format(settings.api_url, settings.project_alias), payload, logger)
+        if r is False:
+            return False
     logger.info("Folder {} completed".format(folder_path))
     return folder_id
 
 
-def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder):
+def process_image_p(filename, folder_id, raw_files, logfile_folder):
     """
     Run checks for image files
     """
@@ -933,25 +803,16 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
     tmp_folder_file = "{}/{}".format(tmp_folder, file_name)
     shutil.copy(main_file_path, tmp_folder_file)
     default_payload = {'api_key': settings.api_key}
-    # s = requests.Session()
-    r = requests.post('{}/api/folders/{}'.format(settings.api_url, folder_id), data=default_payload)
-    if r.status_code != 200:
-        # Something went wrong
-        logger.error("API ({}) Returned Error: {}".format('{}/api/folders/{}'.format(settings.api_url, folder_id), r.text))
-        logger.error("Request: {}".format(str(r.request)))
-        logger.error("Headers: {}".format(r.headers))
-        logger.error("Payload: {}".format(default_payload))
+    # Get folder info
+    folder_info = send_request('{}/api/folders/{}'.format(settings.api_url, folder_id), default_payload, logger, log_res = False)
+    if folder_info is False:
         shutil.rmtree(tmp_folder)
         return False
-    folder_info = json.loads(r.text.encode('utf-8'))
-    r = requests.post('{}/api/projects/{}'.format(settings.api_url, settings.project_alias), data=default_payload)
-    if r.status_code != 200:
-        # Something went wrong
-        query_results = r.text.encode('utf-8')
-        logger.error("API Returned Error: {}".format(query_results))
+    # Get project info
+    project_info = send_request('{}/api/projects/{}'.format(settings.api_url, settings.project_alias), default_payload, logger)
+    if project_info is False:
         shutil.rmtree(tmp_folder)
         return False
-    project_info = json.loads(r.text.encode('utf-8'))
     project_checks = project_info['project_checks']
     logger.info("project_checks: {}".format(project_checks))
     # Check if file exists, insert if not
@@ -974,25 +835,14 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
                 'timestamp': file_timestamp,
                 'filetype': filename_suffix.lower(),
                 }
-        r = requests.post('{}/api/new/{}'.format(settings.api_url, settings.project_alias), data=payload)
-        if r.status_code != 200:
-            # Something went wrong
-            logger.error("API Returned Error: {}".format(r.text))
-            logger.error("Request: {}".format(str(r.request)))
-            logger.error("Headers: {}".format(r.headers))
-            logger.error("Payload: {}".format(payload))
-            shutil.rmtree(tmp_folder)
+        file_info = send_request('{}/api/new/{}'.format(settings.api_url, settings.project_alias), payload, logger)
+        if file_info is False:
             return False
         else:
-            logger.info("API Returned: {}".format(r.text))
-        file_info = json.loads(r.text.encode('utf-8'))['result']
+            file_info = file_info['result']
         logging.debug("new_file:{}".format(file_info))
         file_id = file_info[0]['file_id']
         file_uid = file_info[0]['uid']
-        # Get filesize from TIF:
-        # logging.debug("file_size_pre: {}".format(main_file_path))
-        # file_size = os.path.getsize(main_file_path)
-        # logging.debug("file_size: {} {}".format(main_file_path, file_size))
         logging.debug("file_size_pre: {}".format(tmp_folder_file))
         file_size = os.path.getsize(tmp_folder_file)
         logging.debug("file_size: {} {}".format(tmp_folder_file, file_size))
@@ -1004,35 +854,21 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
             'filetype': filetype.lower(),
             'filesize': file_size
         }
-        r = requests.post('{}/api/new/{}'.format(settings.api_url, settings.project_alias), data=payload)
-        if r.status_code != 200:
-            # Something went wrong
-            logger.error("API Returned Error: {}".format(r.text))
-            logger.error("Request: {}".format(str(r.request)))
-            logger.error("Headers: {}".format(r.headers))
-            logger.error("Payload: {}".format(payload))
+        r = send_request('{}/api/new/{}'.format(settings.api_url, settings.project_alias), payload, logger)
+        if r is False:
             shutil.rmtree(tmp_folder)
             return False
         # Refresh folder info
-        r = requests.post('{}/api/folders/{}'.format(settings.api_url, folder_id), data=default_payload)
-        if r.status_code != 200:
-            # Something went wrong
-            query_results = json.loads(r.text.encode('utf-8'))
-            logger.error("API Returned Error: {}".format(query_results))
-            logger.error("Request: {}".format(str(r.request)))
-            logger.error("Headers: {}".format(r.headers))
-            logger.error("Payload: {}".format(payload))
+        folder_info = send_request('{}/api/folders/{}'.format(settings.api_url, folder_id), default_payload, logger, log_res = False)
+        if folder_info is False:
             shutil.rmtree(tmp_folder)
             return False
-        folder_info = json.loads(r.text.encode('utf-8'))
-        # logger.info("folder_info:{}".format(folder_info))
         for file in folder_info['files']:
             if file['file_name'] == filename_stem:
                 file_id = file['file_id']
                 file_info = file
                 break
-    # else:
-    # File exists, check if there is a dupe
+    # File exists, tag if there is a dupe
     payload = {'type': 'file',
                 'property': 'unique',
                 'folder_id': folder_id,
@@ -1042,14 +878,8 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
                 'value': True,
                 'check_info': True
                 }
-    r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
-                        data=payload)
-    query_results = json.loads(r.text.encode('utf-8'))
-    if query_results["result"] is not True:
-        logger.error("API Returned Error: {}".format(query_results))
-        logger.error("Request: {}".format(str(r.request)))
-        logger.error("Headers: {}".format(r.headers))
-        logger.error("Payload: {}".format(payload))
+    folder_info = send_request('{}/api/update/{}'.format(settings.api_url, settings.project_alias), payload, logger)
+    if folder_info is False:
         shutil.rmtree(tmp_folder)
         return False
     # Check if there is a dupe in another project
@@ -1063,34 +893,28 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
                     'value': True,
                     'check_info': True
                     }
-        r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
-                            data=payload)
-        query_results = json.loads(r.text.encode('utf-8'))
-        if query_results["result"] is not True:
-            logger.error("API Returned Error: {}".format(query_results))
-            logger.error("Request: {}".format(str(r.request)))
-            logger.error("Headers: {}".format(r.headers))
-            logger.error("Payload: {}".format(payload))
+        r = send_request('{}/api/update/{}'.format(settings.api_url, settings.project_alias), payload, logger)
+        if r is False:
             shutil.rmtree(tmp_folder)
             return False
-    logging.debug("file_info: {} - {}".format(file_id, file_info))
+    logging.info("file_info: {} - {}".format(file_id, file_info))
     # Generate jpg preview, if needed
-    # jpg_prev = jpgpreview(file_id, folder_id, main_file_path, logger)
     jpg_prev = jpgpreview(file_id, folder_id, tmp_folder_file, logger)
     logger.info("jpg_prev: {} {} {}".format(file_id, tmp_folder_file, jpg_prev))
     if jpg_prev is False:
         shutil.rmtree(tmp_folder)
         return False
-    # jpg_prev = jpgpreview_zoom(file_id, folder_id, main_file_path, logger)
+    # Generate zoomable jpg preview
     jpg_prev = jpgpreview_zoom(file_id, folder_id, tmp_folder_file, logger)
+    if jpg_prev is False:
+        shutil.rmtree(tmp_folder)
+        return False
     logger.info("jpgpreview_zoom: {} {} {}".format(file_id, tmp_folder_file, jpg_prev))
-    logger.info("file_md5_pre: {} {}".format(file_id, tmp_folder_file))
     file_md5 = get_filemd5(tmp_folder_file, logger)
+    if file_md5 is False:
+        shutil.rmtree(tmp_folder)
+        return False    
     logger.info("file_md5: {} {} - {}".format(file_id, tmp_folder_file, file_md5))
-    # logger.info("jpgpreview_zoom: {} {} {}".format(file_id, main_file_path, jpg_prev))
-    # logger.info("file_md5_pre: {} {}".format(file_id, main_file_path))
-    # file_md5 = get_filemd5(main_file_path, logger)
-    # logger.info("file_md5: {} {} - {}".format(file_id, main_file_path, file_md5))
     payload = {'type': 'file',
                'property': 'filemd5',
                'file_id': file_id,
@@ -1098,23 +922,13 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
                'filetype': filename_suffix,
                'value': file_md5
                }
-    r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
-                      data=payload)
-    query_results = json.loads(r.text.encode('utf-8'))
-    if query_results["result"] is not True:
-        query_results = json.loads(r.text.encode('utf-8'))
-        logger.error("API Returned Error: {}".format(query_results))
-        logger.error("Request: {}".format(str(r.request)))
-        logger.error("Headers: {}".format(r.headers))
-        logger.error("Payload: {}".format(payload))
+    r = send_request('{}/api/update/{}'.format(settings.api_url, settings.project_alias), payload, logger)
+    if r is False:
+        logger.error(r)
         shutil.rmtree(tmp_folder)
         return False
     # Get exif from TIF
-    logger.info("file_exif_pre: {}".format(main_file_path))
-    # data = get_file_exif(main_file_path)
     data = get_file_exif(tmp_folder_file)
-    logger.info("file_exif: {}".format(tmp_folder_file))
-    data_json = json.loads(data)
     payload = {'type': 'file',
                'property': 'exif',
                'file_id': file_id,
@@ -1122,14 +936,9 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
                'filetype': filename_suffix.lower(),
                'value': data
                }
-    r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
-                      data=payload)
-    query_results = json.loads(r.text.encode('utf-8'))
-    if query_results["result"] is not True:
-        logger.error("API Returned Error: {}".format(query_results))
-        logger.error("Request: {}".format(str(r.request)))
-        logger.error("Headers: {}".format(r.headers))
-        logger.error("Payload: {}".format(payload))
+    r = send_request('{}/api/update/{}'.format(settings.api_url, settings.project_alias), payload, logger, log_res = False)
+    if r is False:
+        logger.error(r)
         shutil.rmtree(tmp_folder)
         return False
     logger.info("Running checks on file {} ({}; folder_id: {})".format(filename_stem, file_id, folder_id))
@@ -1137,24 +946,21 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
     if 'raw_pair' in project_checks:
         file_check = 'raw_pair'
         # FilePair check and get MD5 hash
-        check_results, check_info, raw_file = file_pair_check(file_id,
-                                     file_name,
-                                     "{}/{}".format(folder_path, settings.raw_files_path),
-                                     'raw_pair')
-        logger.info("raw_pair: {} {} {} {}".format(file_id, file_name, check_results, check_info))
-        exists_check_results = check_results
-        exists_check_info = check_info
-        # Copy raw to tmp
-        tmp_folder_rawfile = "{}/{}".format(tmp_folder, Path(raw_file).name)
-        shutil.copy(raw_file, tmp_folder_rawfile)
-        if check_results == 1:
-            rawfile_suffix = ""
-            res1 = "Could not find the RAW file"
-            res2 = ""
-        else: 
+        paired_files = file_pair_check(file_name, raw_files)
+        if len(paired_files) == 0:
+            check_results = 1
+            check_info = "Raw file not found for {} ({})".format(filename_stem, file_id)
+        elif len(paired_files) > 1:
+            check_results = 1
+            check_info = "{} raw files found for {} ({})".format(len(paired_files), filename_stem, file_id)
+        else:
+            check_results = 0
+            check_info = "Raw file {} found for {} ({}). ".format(Path(paired_files[0]).name, filename, file_id)
+            # Copy raw to tmp
+            raw_file = paired_files[0]
+            tmp_folder_rawfile = "{}/{}".format(tmp_folder, Path(raw_file).name)
+            shutil.copy(raw_file, tmp_folder_rawfile)
             rawfile_suffix = Path(raw_file).suffix[1:]
-            # check_results1, check_info1 = jhove_validate(raw_file)
-            # check_results2, check_info2 = magick_validate(raw_file)
             check_results1, check_info1 = jhove_validate(tmp_folder_rawfile)
             check_results2, check_info2 = magick_validate(tmp_folder_rawfile)
             res = ""
@@ -1176,51 +982,40 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
                 check_results2 = 0
             if (check_results1 + check_results2) > 0:
                 check_results = 1
-            else:
-                check_results = 0
-        payload = {'type': 'file',
-                'property': 'filechecks',
-                'folder_id': folder_id,
-                'file_id': file_id,
-                'api_key': settings.api_key,
-                'file_check': file_check,
-                'value': check_results,
-                'check_info': "{}\n{}\n{}".format(exists_check_info, res1, res2).replace(settings.project_datastorage, "")
-                }
-        r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
-                        data=payload)
-        query_results = json.loads(r.text.encode('utf-8'))
-        if query_results["result"] is not True:
-            logger.error("API Returned Error: {}".format(query_results))
-            logger.error("Request: {}".format(str(r.request)))
-            logger.error("Headers: {}".format(r.headers))
-            logger.error("Payload: {}".format(payload))
-            shutil.rmtree(tmp_folder)
-            return False
-        # MD5 of RAW file
-        if check_results == 0:
-            file_md5 = get_filemd5(raw_file, logger)
             payload = {'type': 'file',
-                       'property': 'filemd5',
-                       'file_id': file_id,
-                       'api_key': settings.api_key,
-                       'filetype': 'raw',
-                       'value': file_md5
-                       }
-            r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
-                              data=payload)
-            query_results = json.loads(r.text.encode('utf-8'))
-            if query_results["result"] is not True:
-                logger.error("API Returned Error: {}".format(query_results))
-                logger.error("Request: {}".format(str(r.request)))
-                logger.error("Headers: {}".format(r.headers))
-                logger.error("Payload: {}".format(payload))
+                    'property': 'filechecks',
+                    'folder_id': folder_id,
+                    'file_id': file_id,
+                    'api_key': settings.api_key,
+                    'file_check': file_check,
+                    'value': check_results,
+                    'check_info': "{}; {}; {}".format(check_info, res1, res2).replace(settings.project_datastorage, "")
+                    }
+            r = send_request('{}/api/update/{}'.format(settings.api_url, settings.project_alias), payload, logger)
+            if r is False:
+                shutil.rmtree(tmp_folder)
+                return False
+            # MD5 of RAW file
+            file_md5 = get_filemd5(tmp_folder_rawfile, logger)
+            if file_md5 is False:
+                return False
+            raw_filetype = Path(tmp_folder_rawfile).suffix[1:]
+            logging.debug("raw_file_md5: {} {} ({})".format(Path(tmp_folder_rawfile).stem, file_md5, file_id))
+            payload = {'type': 'file',
+                    'property': 'filemd5',
+                    'file_id': file_id,
+                    'api_key': settings.api_key,
+                    'filetype': raw_filetype.lower(),
+                    'value': file_md5
+                    }
+            r = send_request('{}/api/update/{}'.format(settings.api_url, settings.project_alias), payload, logger)
+            if r is False:
                 shutil.rmtree(tmp_folder)
                 return False
             # Raw file size
-            file_size = os.path.getsize(raw_file)
-            logging.debug("raw_file_size: {} {}".format(raw_file, file_size))
-            raw_filetype = Path(raw_file).suffix[1:]
+            file_size = os.path.getsize(tmp_folder_rawfile)
+            logging.debug("raw_file_size: {} {} ({})".format(Path(tmp_folder_rawfile).stem, file_size, file_id))
+            raw_filetype = Path(tmp_folder_rawfile).suffix[1:]
             payload = {
                 'api_key': settings.api_key,
                 'type': "filesize",
@@ -1228,18 +1023,14 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
                 'filetype': raw_filetype.lower(),
                 'filesize': file_size
             }
-            r = requests.post('{}/api/new/{}'.format(settings.api_url, settings.project_alias), data=payload)
-            if r.status_code != 200:
-                # Something went wrong
-                logger.error("API Returned Error: {}".format(r.text))
-                logger.error("Request: {}".format(str(r.request)))
-                logger.error("Headers: {}".format(r.headers))
-                logger.error("Payload: {}".format(payload))
-                shutil.rmtree(tmp_folder)
+            r = send_request('{}/api/new/{}'.format(settings.api_url, settings.project_alias), payload, logger)
+            if r is False:
                 return False
+            # Delete temp raw file
+            if os.path.isfile(tmp_folder_rawfile):
+                os.unlink(tmp_folder_rawfile)
     if 'jhove' in project_checks:
         file_check = 'jhove'
-        # check_results, check_info = jhove_validate(main_file_path)
         check_results, check_info = jhove_validate(tmp_folder_file)
         payload = {'type': 'file',
                    'property': 'filechecks',
@@ -1250,14 +1041,8 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
                    'value': check_results,
                    'check_info': check_info.replace(settings.project_datastorage, "")
                    }
-        r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
-                          data=payload)
-        query_results = json.loads(r.text.encode('utf-8'))
-        if query_results["result"] is not True:
-            logger.error("API Returned Error: {}".format(query_results))
-            logger.error("Request: {}".format(str(r.request)))
-            logger.error("Headers: {}".format(r.headers))
-            logger.error("Payload: {}".format(payload))
+        r = send_request('{}/api/update/{}'.format(settings.api_url, settings.project_alias), payload, logger)
+        if r is False:
             shutil.rmtree(tmp_folder)
             return False
     if 'filename' in project_checks:
@@ -1271,20 +1056,13 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
                    'value': check_results,
                    'check_info': check_info.replace(settings.project_datastorage, "")
                    }
-        r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
-                          data=payload)
-        query_results = json.loads(r.text.encode('utf-8'))
-        if query_results["result"] is not True:
-            logger.error("API Returned Error: {}".format(query_results))
-            logger.error("Request: {}".format(str(r.request)))
-            logger.error("Headers: {}".format(r.headers))
-            logger.error("Payload: {}".format(payload))
+        r = send_request('{}/api/update/{}'.format(settings.api_url, settings.project_alias), payload, logger)
+        if r is False:
             shutil.rmtree(tmp_folder)
             return False
     if 'tifpages' in project_checks:
         file_check = 'tifpages'
         logger.info("tifpages_pre: {} {}".format(file_id, main_file_path))
-        # check_results, check_info = tifpages(main_file_path)
         check_results, check_info = tifpages(tmp_folder_file)
         logger.info("tifpages: {} {} {}".format(file_id, check_results, check_info))
         payload = {'type': 'file',
@@ -1296,14 +1074,8 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
                    'value': check_results,
                    'check_info': check_info
                    }
-        r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
-                          data=payload)
-        query_results = json.loads(r.text.encode('utf-8'))
-        if query_results["result"] is not True:
-            logger.error("API Returned Error: {}".format(query_results))
-            logger.error("Request: {}".format(str(r.request)))
-            logger.error("Headers: {}".format(r.headers))
-            logger.error("Payload: {}".format(payload))
+        r = send_request('{}/api/update/{}'.format(settings.api_url, settings.project_alias), payload, logger)
+        if r is False:
             shutil.rmtree(tmp_folder)
             return False
     if 'magick' in project_checks:
@@ -1323,17 +1095,12 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
                    'value': check_results,
                    'check_info': check_info.replace(settings.project_datastorage, "")
                    }
-        r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
-                          data=payload)
-        query_results = json.loads(r.text.encode('utf-8'))
-        if query_results["result"] is not True:
-            logger.error("API Returned Error: {}".format(query_results))
+        r = send_request('{}/api/update/{}'.format(settings.api_url, settings.project_alias), payload, logger)
+        if r is False:
             shutil.rmtree(tmp_folder)
             return False
     if 'tif_compression' in project_checks:
         file_check = 'tif_compression'
-        logger.info("tif_compression_pre: {} {}".format(file_id, main_file_path))
-        # check_results, check_info = tif_compression(main_file_path)
         check_results, check_info = tif_compression(tmp_folder_file)
         logger.info("tif_compression: {} {} {}".format(file_id, check_results, check_info))
         payload = {'type': 'file',
@@ -1345,16 +1112,32 @@ def process_image_p(filename, folder_path, folder_id, project_id, logfile_folder
                    'value': check_results,
                    'check_info': check_info
                    }
-        r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias),
-                          data=payload)
-        query_results = json.loads(r.text.encode('utf-8'))
-        if query_results["result"] is not True:
-            logger.error("API Returned Error: {}".format(query_results))
-            logger.error("Request: {}".format(str(r.request)))
-            logger.error("Headers: {}".format(r.headers))
-            logger.error("Payload: {}".format(payload))
-            shutil.rmtree(tmp_folder)
+        r = send_request('{}/api/update/{}'.format(settings.api_url, settings.project_alias), payload, logger)
+        if r is False:
+            shutil.rmtree(tmp_folder, ignore_errors=True)
             return False
-    shutil.rmtree(tmp_folder)
-    return True
+    if 'tesseract' in project_checks:
+        file_check = 'tesseract'
+        heck_results = 0
+        check_info = "Not checked"
+        for patterns in settings.tesseract_pattern:
+            if patterns in Path(tmp_folder_file).stem:
+                check_results, check_info = tesseract(tmp_folder_file)
+                break
+        logger.info("tesseract: {} {} {}".format(file_id, check_results, check_info))
+        payload = {'type': 'file',
+                   'property': 'filechecks',
+                   'folder_id': folder_id,
+                   'file_id': file_id,
+                   'api_key': settings.api_key,
+                   'file_check': file_check,
+                   'value': check_results,
+                   'check_info': check_info
+                   }
+        r = send_request('{}/api/update/{}'.format(settings.api_url, settings.project_alias), payload, logger)
+        if r is False:
+            shutil.rmtree(tmp_folder, ignore_errors=True)
+            return False
+    shutil.rmtree(tmp_folder, ignore_errors=True)
+    return folder_id
 

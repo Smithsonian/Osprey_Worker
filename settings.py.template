@@ -7,9 +7,8 @@ project_datastorage = ""
 
 
 # Are md5 files required to check the files in a folder?
-# For a script that generates the MD5 files, see the repo
-#  https://github.com/Smithsonian/MD5_tool
 md5_required = True
+md5_file = ".md5"
 
 
 # Temp folder, usually /tmp
@@ -17,10 +16,10 @@ md5_required = True
 tmp_folder = "/tmp"
 
 
-# Subfolders of files
-main_files_path = "tifs"
-raw_files_path = "raws"
-derivative_files_path = "jpgs"
+# File types
+main_files = ".tif"
+raw_files = ".eip"
+data_files = None
 
 
 # API location
@@ -71,6 +70,16 @@ jpg_previews = ""
 jpg_previews_free = 0.1
 
 
-# Scripts to run before or after checking the files. Set to None if it won't be used.
-pre_script = None
-post_script = None
+# Limit the no of cores for Imagemagick
+magick_limit = 4
+
+
+# Are previews in the same server?
+previews = True
+
+
+run_once = True
+
+
+# Files must contain one of these strings to check with tesseract
+tesseract_pattern = ["label"]

@@ -17,6 +17,7 @@ import json
 import locale
 import sys
 import subprocess
+import tarfile
 
 # Import settings from settings.py file
 import settings
@@ -24,7 +25,7 @@ import settings
 # Import helper functions
 from functions import *
 
-ver = "2.8.3"
+ver = "2.9.0"
 
 # Pass an argument in the CLI 'debug'
 if len(sys.argv) == 4:
@@ -138,24 +139,33 @@ def main():
         else:
             logger.error("Extraneous files in: {}".format(entry.path))
             sys.exit(1)
-    if worker_set != None:
-        logger.info("worker_set: {}".format(worker_set))
-        logger.info("no_sets: {}".format(no_sets))
-        folders.sort()
-        # Break for sets
-        folders_sets = np.array_split(folders, no_sets)
-        folders = folders_sets[worker_set].tolist()
     # No folders found
     if len(folders) == 0:
         logger.info("No folders found in: {}".format(settings.project_datastorage))
         return True
     # Check each folder
     logger.info("project_info: {}".format(project_info))
-    print("No. of folders: {}".format(len(folders)))
     for folder in folders:
-        logger.info("Folders: {}".format(folder))
-    for folder in folders:
-        run_checks_folder_p(project_info, folder, log_folder, logger)
+        working_on = "Working on folder: {}".format(folder)
+        logger.info(working_on)
+        print(working_on)
+        res = run_checks_folder_p(project_info, folder, log_folder, logger)
+        if res is False:
+            logger.error("Folder {} returned error".format(folder))
+        # Tar the files
+        fol_data = "{}/folder{}".format(settings.jpg_previews, res)
+        if os.path.isdir(fol_data):
+            os.chdir("{}/folder{}".format(settings.jpg_previews, res))
+            for entry in os.scandir("."):
+                if entry.is_dir() and entry.name[-6:] == "_files":
+                    try:
+                        print("Tar of previews of {}".format(entry.name))
+                        tar = tarfile.open("{}.tar".format(entry.name), "w")
+                        tar.add(entry.name)
+                        tar.close()
+                        shutil.rmtree(entry.name)
+                    except:
+                        logger.error("Error tar for {}".format(res))
     logger.info("Script completed on {}".format(time.strftime("%Y%m%d_%H%M%S", time.localtime())))
     return True
 
@@ -164,56 +174,6 @@ def main():
 # Main loop
 ############################################
 if __name__ == "__main__":
-    if run_debug == 'debug':
-        print("Running debug version...")
-        main()
-    else:
-        orig_dir = os.getcwd()
-        while True:
-            try:
-                # Check if there is a pre script to run
-                if settings.pre_script is not None:
-                    p = subprocess.Popen([settings.pre_script], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                    (out, err) = p.communicate()
-                    if p.returncode != 0:
-                        print("Pre-script error")
-                        print(out)
-                        print(err)
-                        sys.exit(9)
-                    else:
-                        print(out)
-                # Run main function
-                mainval = main()
-                # Return to main dir
-                os.chdir(orig_dir)
-                # Check if there is a post script to run
-                if settings.post_script is not None:
-                    p = subprocess.Popen([settings.post_script], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                    (out, err) = p.communicate()
-                    if p.returncode != 0:
-                        print("Post-script error")
-                        print(out)
-                        print(err)
-                        sys.exit(9)
-                    else:
-                        print(out)
-                if settings.sleep is False:
-                    logger.info("Process completed!")
-                    compress_log()
-                    sys.exit(0)
-                else:
-                    logger.info("Sleeping for {} secs".format(settings.sleep))
-                    # Sleep before trying again
-                    time.sleep(settings.sleep)
-                    continue
-            except KeyboardInterrupt:
-                logger.info("Ctrl-c detected. Leaving program.")
-                compress_log()
-                sys.exit(0)
-            except Exception as e:
-                logger.error("There was an error: {}".format(e))
-                compress_log()
-                sys.exit(1)
+    main()
+    compress_log()
 
-
-sys.exit(0)

@@ -172,24 +172,23 @@ def magick_validate(filename, paranoid=False):
     if paranoid:
         if settings.magick is None:
             p = subprocess.Popen([magick_limit, 'identify', '-verbose', '-regard-warnings', filename], stdout=subprocess.PIPE,
-                             stderr=subprocess.PIPE, env={"MAGICK_THREAD_LIMIT": "1"}, shell=True)
+                             stderr=subprocess.PIPE, shell=True)
         else:
             p = subprocess.Popen([magick_limit, settings.magick, '-verbose', '-regard-warnings', filename], stdout=subprocess.PIPE,
-                             stderr=subprocess.PIPE, env={"MAGICK_THREAD_LIMIT": "1"}, shell=True)
+                             stderr=subprocess.PIPE, shell=True)
     else:
         if settings.magick is None:
             p = subprocess.Popen([magick_limit, 'identify', '-verbose', filename], stdout=subprocess.PIPE,
-                             stderr=subprocess.PIPE, env={"MAGICK_THREAD_LIMIT": "1"}, shell=True)
+                             stderr=subprocess.PIPE, shell=True)
         else:
             p = subprocess.Popen([magick_limit, settings.magick, '-verbose', filename], stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE, env={"MAGICK_THREAD_LIMIT": "1"}, shell=True)
+                            stderr=subprocess.PIPE, shell=True)
     (out, err) = p.communicate()
     if p.returncode == 0:
-        magick_identify = 0
+        check_results = 0
     else:
-        magick_identify = 1
+        check_results = 1
     magick_identify_info = out + err
-    check_results = magick_identify
     check_info = magick_identify_info.decode('latin-1')
     return check_results, check_info
 
@@ -267,6 +266,32 @@ def tif_compression(file_path):
         check_results = 1
     # return True
     return check_results, check_info
+
+
+# def check_img_bits(file_path):
+#     """
+#     Check if the image is in the required 8- or 16-bits
+#     """
+#     try:
+#         settings.magick_limit
+#     except NameError:
+#         magick_limit = ""
+#     else:
+#         magick_limit = "MAGICK_THREAD_LIMIT={}".format(settings.magick_limit)    
+#     if settings.magick is None:
+#         p = subprocess.Popen([magick_limit, 'identify', file_path], stdout=subprocess.PIPE,
+#                             stderr=subprocess.PIPE, shell=True)
+#     else:
+#         p = subprocess.Popen([magick_limit, settings.magick, file_path], stdout=subprocess.PIPE,
+#                         stderr=subprocess.PIPE, shell=True)
+#     (out, err) = p.communicate()
+#     if p.returncode == 0:
+#         check_results = 0
+#     else:
+#         check_results = 1
+#     magick_identify_info = out + err
+#     check_info = magick_identify_info.decode('latin-1')
+#     return check_results, check_info
 
 
 def tesseract(file_path):
@@ -1045,6 +1070,22 @@ def process_image_p(filename, folder_id, raw_files, logfile_folder):
         if r is False:
             shutil.rmtree(tmp_folder)
             return False
+    # if 'bits' in project_checks:
+    #     file_check = 'bits'
+    #     check_results, check_info = check_img_bits(tmp_folder_file)
+    #     payload = {'type': 'file',
+    #                'property': 'filechecks',
+    #                'folder_id': folder_id,
+    #                'file_id': file_id,
+    #                'api_key': settings.api_key,
+    #                'file_check': file_check,
+    #                'value': check_results,
+    #                'check_info': check_info.replace(settings.project_datastorage, "")
+    #                }
+    #     r = send_request('{}/api/update/{}'.format(settings.api_url, settings.project_alias), payload, logger)
+    #     if r is False:
+    #         shutil.rmtree(tmp_folder)
+    #         return False
     if 'filename' in project_checks:
         file_check = 'filename'
         payload = {'type': 'file',

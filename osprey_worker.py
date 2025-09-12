@@ -155,7 +155,7 @@ def main():
         # Tar the files
         fol_data = "{}/folder{}".format(settings.jpg_previews, res)
         if os.path.isdir(fol_data):
-            os.chdir("{}/folder{}".format(settings.jpg_previews, res))
+            os.chdir(fol_data)
             for entry in os.scandir("."):
                 if entry.is_dir() and entry.name[-6:] == "_files":
                     try:

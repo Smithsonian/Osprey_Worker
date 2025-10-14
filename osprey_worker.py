@@ -17,7 +17,6 @@ import json
 import locale
 import sys
 import subprocess
-import tarfile
 
 # Import settings from settings.py file
 import settings
@@ -25,7 +24,7 @@ import settings
 # Import helper functions
 from functions import *
 
-ver = "2.9.0"
+ver = "2.9.1"
 
 # Pass an argument in the CLI 'debug'
 if len(sys.argv) == 4:
@@ -53,14 +52,14 @@ if not os.path.exists(log_folder):
 # Logging
 current_time = time.strftime("%Y%m%d_%H%M%S", time.localtime())
 if worker_set != None:
-    logfile = '{}/{}_w{}_{}.log'.format(log_folder, settings.project_alias, worker_set, current_time)
+    logfile = f"{log_folder}/{settings.project_alias}_w{worker_set}_{current_time}.log"
 else:
-    logfile = '{}/{}_{}.log'.format(log_folder, settings.project_alias, current_time)
+    logfile = f"{log_folder}/{settings.project_alias}_{current_time}.log"
 logging.basicConfig(filename=logfile, filemode='a', level=logging.DEBUG,
                     format='%(levelname)s | %(asctime)s | %(filename)s:%(lineno)s | %(message)s',
                     datefmt='%Y-%b-%d %H:%M:%S')
 logger = logging.getLogger("osprey")
-logging.info("osprey version {}".format(ver))
+logging.info(f"osprey version {ver}")
 
 # Set locale for number format
 locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
@@ -92,24 +91,24 @@ def main():
     Main function to validate images in digitization projects.
     """
     if not os.path.isdir(settings.project_datastorage):
-        logger.error("Path not found: {}".format(settings.project_datastorage))
+        logger.error(f"Path not found: {settings.project_datastorage}")
         sys.exit(1)
     r = requests.get('{}/api/'.format(settings.api_url))
     if r.status_code != 200:
         # Something went wrong
         query_results = r.text.encode('utf-8')
-        logger.error("API Returned Error: {}".format(query_results))
+        logger.error(f"API Returned Error: {query_results}")
         sys.exit(1)
     system_info = json.loads(r.text.encode('utf-8'))
     if system_info['sys_ver'] != ver:
-        logger.error("API version ({}) does not match this script ({})".format(system_info['sys_ver'], ver))
+        logger.error(f"API version ({system_info['sys_ver']}) does not match this script ({ver})")
         sys.exit(1)
     default_payload = {'api_key': settings.api_key}
-    r = requests.post('{}/api/projects/{}'.format(settings.api_url, settings.project_alias), data=default_payload)
+    r = requests.post(f"{settings.api_url}/api/projects/{settings.project_alias}", data=default_payload)
     if r.status_code != 200:
         # Something went wrong
         query_results = r.text.encode('utf-8')
-        logger.error("API Returned Error: {}".format(query_results))
+        logger.error(f"API Returned Error: {query_results}")
         sys.exit(1)
     project_info = json.loads(r.text.encode('utf-8'))
     # Reset folders under verification and other pending tasks
@@ -120,11 +119,11 @@ def main():
                    'api_key': settings.api_key,
                    'value': True
                    }
-        r = requests.post('{}/api/update/{}'.format(settings.api_url, settings.project_alias), data=payload)
+        r = requests.post(f"{settings.api_url}/api/update/{settings.project_alias}", data=payload)
         if r.status_code != 200:
             # Something went wrong
             query_results = r.text.encode('utf-8')
-            logger.error("API Returned Error: {}".format(query_results))
+            logger.error(f"API Returned Error: {query_results}")
             sys.exit(1)
     else:
         # Wait 20 seconds for first
@@ -137,35 +136,22 @@ def main():
             print(entry)
             folders.append(entry.path)
         else:
-            logger.error("Extraneous files in: {}".format(entry.path))
+            logger.error(f"Extraneous files in: {entry.path}")
             sys.exit(1)
     # No folders found
     if len(folders) == 0:
-        logger.info("No folders found in: {}".format(settings.project_datastorage))
+        logger.info(f"No folders found in: {settings.project_datastorage}")
         return True
     # Check each folder
-    logger.info("project_info: {}".format(project_info))
+    # logger.info(f"project_info: {project_info}")
     for folder in folders:
-        working_on = "Working on folder: {}".format(folder)
+        working_on = f"Working on folder: {folder}"
         logger.info(working_on)
         print(working_on)
         res = run_checks_folder_p(project_info, folder, log_folder, logger)
         if res is False:
-            logger.error("Folder {} returned error".format(folder))
-        # Tar the files
-        fol_data = "{}/folder{}".format(settings.jpg_previews, res)
-        if os.path.isdir(fol_data):
-            os.chdir(fol_data)
-            for entry in os.scandir("."):
-                if entry.is_dir() and entry.name[-6:] == "_files":
-                    try:
-                        print("Tar of previews of {}".format(entry.name))
-                        tar = tarfile.open("{}.tar".format(entry.name), "w")
-                        tar.add(entry.name)
-                        tar.close()
-                        shutil.rmtree(entry.name)
-                    except:
-                        logger.error("Error tar for {}".format(res))
+            logger.error(f"Folder {folder} returned error")
+            # sys.exit(1)
     logger.info("Script completed on {}".format(time.strftime("%Y%m%d_%H%M%S", time.localtime())))
     return True
 

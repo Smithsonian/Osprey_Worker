@@ -691,6 +691,8 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
             r = send_request(f"{settings.api_url}/api/update/{settings.project_alias}", payload, logger)
             if r is False:
                 return False
+            # Update folder stats
+            update_folder_stats(folder_id, logger)
             # Don't do anything else
             return False
     # MD5 required?
@@ -706,6 +708,8 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
             r = send_request(f"{settings.api_url}/api/update/{settings.project_alias}", payload, logger)
             if r is False:
                 return False
+            # Update folder stats
+            update_folder_stats(folder_id, logger)
             # Don't do anything else
             return False
         else:

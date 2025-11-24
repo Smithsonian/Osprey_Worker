@@ -706,6 +706,8 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
             r = send_request(f"{settings.api_url}/api/update/{settings.project_alias}", payload, logger)
             if r is False:
                 return False
+            # Don't do anything else
+            return False
         else:
             # Check if the MD5 file matches the contents of the folder
             md5_check, md5_error = validate_md5(md5_files, md5_allowed_files)

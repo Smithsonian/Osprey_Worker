@@ -18,6 +18,7 @@ import hashlib
 from multiprocessing import Pool
 # import pytesseract
 import tarfile
+import uuid 
 
 # Zoom images
 import si_deepzoom as deepzoom
@@ -259,7 +260,7 @@ def sequence_validate(filename, folder_id, project_files):
                'value': check_results,
                'check_info': check_info
                }
-    r = requests.post(f"{settings.api_url}/api/update/{settings.project_alias}", data=payload)
+    r = requests.post(f"{settings.api_url}/update/{settings.project_alias}", data=payload)
     query_results = json.loads(r.text.encode('utf-8'))
     if query_results["result"] is not True:
         return False
@@ -274,7 +275,12 @@ def tif_compression(file_path):
         img = Image.open(file_path)
     except Exception as e:
         return 1, f"File opening error: {file_path} - {e}"
-    check_info = img.info['compression']
+    # If tif is in another format, this won't work, mark it as error
+    try:
+        check_info = img.info['compression']
+    except KeyError as e:
+        check_results = 1
+        return check_results, f"Could not find {e}"
     if check_info == 'tiff_lzw':
         check_results = 0
     else:
@@ -335,7 +341,12 @@ def tifpages(file_path):
         img = Image.open(file_path)
     except Exception as e:
         return 1, f"File opening error: {file_path} - {e}"
-    no_pages = img.n_frames
+    # If tif is in another format, this won't work, mark it as error
+    try:
+        no_pages = img.n_frames
+    except AttributeError as e:
+        check_results = 1
+        return check_results, f"{e}"
     if no_pages == 1:
         check_results = 0
     else:
@@ -397,7 +408,22 @@ def jpgpreview(file_id, folder_id, file_path, logger):
         if (disk_check.free / disk_check.total) < settings.jpg_previews_free:
             logger.error(f"JPG storage location is running out of space ({round(disk_check.free / disk_check.total, 4) * 100}%) - {settings.jpg_previews}")
             return False
-    preview_file_path = f"{settings.jpg_previews}/folder{folder_id}"
+    try:
+        folder_id = int(folder_id)
+        transcription = 0
+    except:
+        try:
+            # Allow for UUIDs
+            folder_id = uuid.UUID(folder_id, version=4)
+            folder_id = str(folder_id)
+            transcription = 1
+        except ValueError as e:
+            logger.error(f"Could not determine type of fodler_id: {folder_id} ({e})")
+            return False
+    if transcription == 1:
+        preview_file_path = f"{settings.jpg_previews}/{folder_id}"
+    else:
+        preview_file_path = f"{settings.jpg_previews}/folder{folder_id}"
     preview_image_160 = f"{preview_file_path}/160/{file_id}.jpg"
     # Create subfolder if it doesn't exists
     os.makedirs(preview_file_path, exist_ok=True)
@@ -434,7 +460,22 @@ def jpgpreview_zoom(file_id, folder_id, file_path, logger):
         if (disk_check.free / disk_check.total) < settings.jpg_previews_free:
             logger.error(f"JPG storage location is running out of space ({round(disk_check.free / disk_check.total, 4) * 100}%) - {settings.jpg_previews}")
             return False
-    preview_file_path = f"{settings.jpg_previews}/folder{folder_id}"
+    try:
+        folder_id = int(folder_id)
+        transcription = 0
+    except:
+        try:
+            # Allow for UUIDs
+            folder_id = uuid.UUID(folder_id, version=4)
+            folder_id = str(folder_id)
+            transcription = 1
+        except ValueError as e:
+            logger.error(f"Could not determine type of fodler_id: {folder_id} ({e})")
+            return False
+    if transcription == 1:
+        preview_file_path = f"{settings.jpg_previews}/{folder_id}"
+    else:
+        preview_file_path = f"{settings.jpg_previews}/folder{folder_id}"
     zoom_folder = f"{preview_file_path}/{file_id}_files"
     # Remove tiles folder
     if os.path.exists(zoom_folder):
@@ -515,7 +556,7 @@ def validate_md5(md5_files, files):
     md5_hashes = pd.DataFrame(columns=['md5', 'file'])
     for md5f in md5_files:
         # Read md5 file
-        read_md5 = pd.read_csv(md5f, sep=' ', header=None, names=['md5', 'file'])
+        read_md5 = pd.read_csv(md5f, sep=r'\s+', header=None, names=['md5', 'file'])
         md5_hashes = pd.concat([md5_hashes, read_md5], ignore_index=True, sort=False)
     if len(files) != md5_hashes.shape[0]:
         exit_msg = f"No. of files ({len(files)}) mismatch MD5 file ({md5_hashes.shape[0]})"
@@ -530,7 +571,6 @@ def validate_md5(md5_files, files):
         return 1, exit_msg
 
 
-
 def update_folder_stats(folder_id, logger):
     """
     Update the stats for the folder
@@ -541,7 +581,7 @@ def update_folder_stats(folder_id, logger):
                'property': 'stats',
                'value': '0'
                }
-    r = send_request(f"{settings.api_url}/api/update/{settings.project_alias}", payload, logger)
+    r = send_request(f"{settings.api_url}/update/{settings.project_alias}", payload, logger)
     if r is False:
         logger.error(r)
         return False
@@ -554,8 +594,9 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
     Process a folder in parallel
     """
     project_id = project_info['project_alias']
+    transcription = project_info['transcription']
     default_payload = {'api_key': settings.api_key}
-    project_info = send_request(f"{settings.api_url}/api/projects/{settings.project_alias}", default_payload, logger, log_res = False)
+    project_info = send_request(f"{settings.api_url}/projects/{settings.project_alias}", default_payload, logger, log_res = False)
     if project_info == False:
         return False
     project_checks = project_info['project_checks']
@@ -572,6 +613,7 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
                 folder_id = folder_info['folder_id']
                 delivered_to_dams = folder_info['delivered_to_dams']
                 logger.info(f"Folder exists: {folder_id}")
+                logger.info(f"Folder info: {folder_info}")
                 # folder found, break loop
                 break
     if folder_id is None:
@@ -585,11 +627,14 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
             'folder_date': folder_date,
             'project_id': project_info['project_id']
         }
-        r = send_request(f"{settings.api_url}/api/new/{settings.project_alias}", payload, logger)
+        r = send_request(f"{settings.api_url}/new/{settings.project_alias}", payload, logger)
         if r is False:
             return False
         else:
-            folder_id = r["result"][0]['folder_id']
+            if transcription == 1:
+                folder_id = r["result"][0]['folder_transcription_id']
+            else:
+                folder_id = r["result"][0]['folder_id']
             delivered_to_dams = 9
     # if folder_id is None:
     if 'folder_id' not in locals():
@@ -601,7 +646,7 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
         logger.info(f"Folder ready for or delivered to for DAMS, skipping {folder_path}")
         return folder_id
     # Check if QC has been run
-    folder_info = send_request(f"{settings.api_url}/api/folders/{folder_id}", default_payload, logger, log_res = False)
+    folder_info = send_request(f"{settings.api_url}/folders/{folder_id}", default_payload, logger, log_res = False)
     if folder_info is False:
         return False
     if folder_info['qc_status'] != "QC Pending":
@@ -619,7 +664,7 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
                'property': 'checking_folder',
                'value': 1
                }
-    r = send_request(f"{settings.api_url}/api/update/{settings.project_alias}", payload, logger)
+    r = send_request(f"{settings.api_url}/update/{settings.project_alias}", payload, logger)
     if r is False:
         return False
     # Get all files in folder
@@ -645,7 +690,7 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
     for file in files:
         if Path(file).suffix not in allowed_files:
             payload = {'type': 'folder', 'folder_id': folder_id, 'api_key': settings.api_key, 'property': 'status1', 'value': 'Extraneous files'}
-            r = send_request(f"{settings.api_url}/api/update/{settings.project_alias}", payload, logger)
+            r = send_request(f"{settings.api_url}/update/{settings.project_alias}", payload, logger)
             if r is False:
                 return False
             return False
@@ -671,12 +716,12 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
                     'property': 'delete',
                     'value': True
                     }
-            r = send_request(f"{settings.api_url}/api/update/{settings.project_alias}", payload, logger)
+            r = send_request(f"{settings.api_url}/update/{settings.project_alias}", payload, logger)
             if r is False:
                 return False
         elif total > 1:
             payload = {'type': 'folder', 'folder_id': folder_id, 'api_key': settings.api_key, 'property': 'status1', 'value': 'Dupe file in folder ({})'.format(f_name)}
-            r = send_request(f"{settings.api_url}/api/update/{settings.project_alias}", payload, logger)
+            r = send_request(f"{settings.api_url}/update/{settings.project_alias}", payload, logger)
             if r is False:
                 return False
     # Check if filenames have spaces
@@ -688,7 +733,7 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
                'property': 'filename_spaces',
                'value': 1
                }
-            r = send_request(f"{settings.api_url}/api/update/{settings.project_alias}", payload, logger)
+            r = send_request(f"{settings.api_url}/update/{settings.project_alias}", payload, logger)
             if r is False:
                 return False
             # Update folder stats
@@ -705,7 +750,7 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
         if len(md5_files) == 0:
             folder_status_msg = "MD5 files missing"
             payload = {'type': 'folder', 'folder_id': folder_id, 'api_key': settings.api_key, 'property': 'status1', 'value': folder_status_msg}
-            r = send_request(f"{settings.api_url}/api/update/{settings.project_alias}", payload, logger)
+            r = send_request(f"{settings.api_url}/update/{settings.project_alias}", payload, logger)
             if r is False:
                 return False
             # Update folder stats
@@ -725,12 +770,12 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
                     'property': property,
                     'value': md5_error
                     }
-            r = send_request(f"{settings.api_url}/api/update/{settings.project_alias}", payload, logger)
+            r = send_request(f"{settings.api_url}/update/{settings.project_alias}", payload, logger)
             if r is False:
                 return False
-            payload = {'type': 'folder', 'folder_id': folder_id, 'api_key': settings.api_key, 'property': 'status1', 'value': md5_error}
             if md5_check != 0:
-                r = send_request(f"{settings.api_url}/api/update/{settings.project_alias}", payload, logger)
+                payload = {'type': 'folder', 'folder_id': folder_id, 'api_key': settings.api_key, 'property': 'status1', 'value': md5_error}
+                r = send_request(f"{settings.api_url}/update/{settings.project_alias}", payload, logger)
                 if r is False:
                     return False
     if 'raw_pair' in project_checks:
@@ -739,14 +784,17 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
             folder_status_msg = f"No. of files do not match (main: {len(image_main_files)}, raws: {len(raw_files)})"
             payload = {'type': 'folder', 'folder_id': folder_id, 'api_key': settings.api_key, 'property': 'status1',
                         'value': folder_status_msg}
-            r = send_request(f"{settings.api_url}/api/update/{settings.project_alias}", payload, logger)
+            r = send_request(f"{settings.api_url}/update/{settings.project_alias}", payload, logger)
             if r is False:
                 return False
     else:
         raw_files = []
     # Create subfolder if it doesn't exists
     if len(image_main_files) > 0:
-        preview_file_path = f"{settings.jpg_previews}/folder{folder_id}"
+        if transcription == 1:
+            preview_file_path = f"{settings.jpg_previews}/{folder_id}"
+        else:
+            preview_file_path = f"{settings.jpg_previews}/folder{folder_id}"
         if not os.path.exists(preview_file_path):
             os.makedirs(preview_file_path)
     ###############
@@ -759,7 +807,7 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
         logger.info(print_str)
         # Process files in parallel
         for file in image_main_files:
-            res = process_image_p(file, folder_id, raw_files, logfile_folder)
+            res = process_image_p(file, folder_id, raw_files, transcription, logfile_folder)
             if res is False:
                 return False
     else:
@@ -768,7 +816,7 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
             settings.no_workers), folder_path=folder_path)
         logger.info(print_str)
         # Process files in parallel
-        inputs = zip(image_main_files, itertools.repeat(folder_id), itertools.repeat(raw_files), itertools.repeat(logfile_folder))
+        inputs = zip(image_main_files, itertools.repeat(folder_id), itertools.repeat(raw_files), itertools.repeat(transcription), itertools.repeat(logfile_folder))
         with Pool(settings.no_workers) as pool:
             pool.starmap(process_image_p, inputs)
             pool.close()
@@ -776,7 +824,7 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
     # Run end-of-folder checks
     if 'sequence' in project_checks:
         no_tasks = len(image_main_files)
-        project_files = send_request(f"{settings.api_url}/api/projects/{settings.project_alias}/files", default_payload, logger, log_res = False)
+        project_files = send_request(f"{settings.api_url}/projects/{settings.project_alias}/files", default_payload, logger, log_res = False)
         if project_files is False:
             return False
         if settings.no_workers == 1:
@@ -798,20 +846,20 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
                 pool.join()
     # Verify numbers match
     logger.info(f"Folder count verification {folder_id}")
-    folder_info = send_request(f"{settings.api_url}/api/folders/{folder_id}", default_payload, logger, log_res = False)
+    folder_info = send_request(f"{settings.api_url}/folders/{folder_id}", default_payload, logger, log_res = False)
     no_files_api = len(folder_info['files'])
     no_files_main = len(image_main_files)
     logger.info(f"Folder numbers match: (folder_id:{folder_id}) {no_files_main}/{no_files_api}")
     if no_files_api != no_files_main:
         logger.error(f"Files in system ({no_files_main}) do not match files in API ({no_files_api})")
         payload = {'type': 'folder', 'folder_id': folder_id, 'api_key': settings.api_key, 'property': 'status1', 'value': "System error"}
-        r = send_request(f"{settings.api_url}/api/update/{settings.project_alias}", payload, logger)
+        r = send_request(f"{settings.api_url}/update/{settings.project_alias}", payload, logger)
         if r["result"] is not True:
             return False
     else:
         logger.info(f"Files in system ({no_files_main}) match files in API ({no_files_api}) (folder_id:{folder_id})")
         payload = {'type': 'folder', 'folder_id': folder_id, 'api_key': settings.api_key, 'property': 'status0', 'value': ""}
-        r = send_request(f"{settings.api_url}/api/update/{settings.project_alias}", payload, logger)
+        r = send_request(f"{settings.api_url}/update/{settings.project_alias}", payload, logger)
         if r is False:
             return False
     # Update folder stats
@@ -819,14 +867,14 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
     # If same server, set previews as ready
     if settings.previews is True:
         payload = {'type': 'folder', 'folder_id': folder_id, 'api_key': settings.api_key, 'property': 'previews', 'value': '0'}
-        r = send_request(f"{settings.api_url}/api/update/{settings.project_alias}", payload, logger)
+        r = send_request(f"{settings.api_url}/update/{settings.project_alias}", payload, logger)
         if r is False:
             return False
     logger.info(f"Folder {folder_path} completed")
     return folder_id
 
 
-def process_image_p(filename, folder_id, raw_files, logfile_folder):
+def process_image_p(filename, folder_id, raw_files, transcription, logfile_folder):
     """
     Run checks for image files
     """
@@ -846,28 +894,17 @@ def process_image_p(filename, folder_id, raw_files, logfile_folder):
     logger = logging.getLogger(f"osprey_{random_int}")
     main_file_path = filename
     logger.info(f"filename: {main_file_path}")
-    folder_id = int(folder_id)
     filename_stem = Path(filename).stem
     filename_suffix = Path(filename).suffix[1:]
     file_name = Path(filename).name
-    # Copy to tmp folder
-    # osprey_wd = "{}/ospreyp_{}".format(settings.tmp_folder, random.randint(100,10000))
-    # try:
-    #     os.mkdir(osprey_wd)
-    # except FileExistsError as error:
-    #     # Try another name
-    #     osprey_wd = "{}/ospreyp_{}b".format(settings.tmp_folder, random.randint(100,10000))
-    #     os.mkdir(osprey_wd)
     osprey_wd = settings.tmp_folder
-    # main_file_path = f"{osprey_wd}/{file_name}"
-    # shutil.copy(main_file_path, main_file_path)
     default_payload = {'api_key': settings.api_key}
     # Get folder info
-    folder_info = send_request(f"{settings.api_url}/api/folders/{folder_id}", default_payload, logger, log_res = False)
+    folder_info = send_request(f"{settings.api_url}/folders/{folder_id}", default_payload, logger, log_res = False)
     if folder_info is False:
         return False
     # Get project info
-    project_info = send_request(f"{settings.api_url}/api/projects/{settings.project_alias}", default_payload, logger)
+    project_info = send_request(f"{settings.api_url}/projects/{settings.project_alias}", default_payload, logger)
     if project_info is False:
         return False
     project_checks = project_info['project_checks']
@@ -891,14 +928,13 @@ def process_image_p(filename, folder_id, raw_files, logfile_folder):
                 'timestamp': file_timestamp,
                 'filetype': filename_suffix.lower(),
                 }
-        file_info = send_request(f"{settings.api_url}/api/new/{settings.project_alias}", payload, logger)
+        file_info = send_request(f"{settings.api_url}/new/{settings.project_alias}", payload, logger)
         if file_info is False:
             return False
         else:
             file_info = file_info['result']
         logging.debug("new_file:{}".format(file_info))
         file_id = file_info[0]['file_id']
-        file_uid = file_info[0]['uid']
         logging.debug("file_size_pre: {}".format(main_file_path))
         file_size = os.path.getsize(main_file_path)
         logging.debug("file_size: {} {}".format(main_file_path, file_size))
@@ -910,11 +946,11 @@ def process_image_p(filename, folder_id, raw_files, logfile_folder):
             'filetype': filetype.lower(),
             'filesize': file_size
         }
-        r = send_request(f"{settings.api_url}/api/new/{settings.project_alias}", payload, logger)
+        r = send_request(f"{settings.api_url}/new/{settings.project_alias}", payload, logger)
         if r is False:
             return False
         # Refresh folder info
-        folder_info = send_request(f"{settings.api_url}/api/folders/{folder_id}", default_payload, logger, log_res = False)
+        folder_info = send_request(f"{settings.api_url}/folders/{folder_id}", default_payload, logger, log_res = False)
         if folder_info is False:
             return False
         for file in folder_info['files']:
@@ -932,7 +968,7 @@ def process_image_p(filename, folder_id, raw_files, logfile_folder):
                 'value': True,
                 'check_info': True
                 }
-    folder_info = send_request(f"{settings.api_url}/api/update/{settings.project_alias}", payload, logger)
+    folder_info = send_request(f"{settings.api_url}/update/{settings.project_alias}", payload, logger)
     if folder_info is False:
         return False
     # Check if there is a dupe in another project
@@ -946,7 +982,7 @@ def process_image_p(filename, folder_id, raw_files, logfile_folder):
                     'value': True,
                     'check_info': True
                     }
-        r = send_request(f"{settings.api_url}/api/update/{settings.project_alias}", payload, logger)
+        r = send_request(f"{settings.api_url}/update/{settings.project_alias}", payload, logger)
         if r is False:
             return False
     logging.info(f"file_info: {file_id} - {file_info}")
@@ -971,7 +1007,7 @@ def process_image_p(filename, folder_id, raw_files, logfile_folder):
                'filetype': filename_suffix,
                'value': file_md5
                }
-    r = send_request(f"{settings.api_url}/api/update/{settings.project_alias}", payload, logger)
+    r = send_request(f"{settings.api_url}/update/{settings.project_alias}", payload, logger)
     if r is False:
         logger.error(r)
         return False
@@ -984,7 +1020,7 @@ def process_image_p(filename, folder_id, raw_files, logfile_folder):
                'filetype': filename_suffix.lower(),
                'value': data
                }
-    r = send_request(f"{settings.api_url}/api/update/{settings.project_alias}", payload, logger, log_res = False)
+    r = send_request(f"{settings.api_url}/update/{settings.project_alias}", payload, logger, log_res = False)
     if r is False:
         logger.error(r)
         return False
@@ -1043,7 +1079,7 @@ def process_image_p(filename, folder_id, raw_files, logfile_folder):
                     'value': check_results,
                     'check_info': "{}; {}; {}".format(check_info, res1, res2).replace(settings.project_datastorage, "")
                     }
-            r = send_request(f"{settings.api_url}/api/update/{settings.project_alias}", payload, logger)
+            r = send_request(f"{settings.api_url}/update/{settings.project_alias}", payload, logger)
             if r is False:
                 return False
             # MD5 of RAW file
@@ -1059,7 +1095,7 @@ def process_image_p(filename, folder_id, raw_files, logfile_folder):
                     'filetype': raw_filetype.lower(),
                     'value': file_md5
                     }
-            r = send_request(f"{settings.api_url}/api/update/{settings.project_alias}", payload, logger)
+            r = send_request(f"{settings.api_url}/update/{settings.project_alias}", payload, logger)
             if r is False:
                 return False
             # Raw file size
@@ -1073,7 +1109,7 @@ def process_image_p(filename, folder_id, raw_files, logfile_folder):
                 'filetype': raw_filetype.lower(),
                 'filesize': file_size
             }
-            r = send_request(f"{settings.api_url}/api/new/{settings.project_alias}", payload, logger)
+            r = send_request(f"{settings.api_url}/new/{settings.project_alias}", payload, logger)
             if r is False:
                 return False
     if 'jhove' in project_checks:
@@ -1088,7 +1124,7 @@ def process_image_p(filename, folder_id, raw_files, logfile_folder):
                    'value': check_results,
                    'check_info': check_info.replace(settings.project_datastorage, "")
                    }
-        r = send_request(f"{settings.api_url}/api/update/{settings.project_alias}", payload, logger)
+        r = send_request(f"{settings.api_url}/update/{settings.project_alias}", payload, logger)
         if r is False:
             return False
     # if 'bits' in project_checks:
@@ -1103,7 +1139,7 @@ def process_image_p(filename, folder_id, raw_files, logfile_folder):
     #                'value': check_results,
     #                'check_info': check_info.replace(settings.project_datastorage, "")
     #                }
-    #     r = send_request(f"{settings.api_url}/api/update/{settings.project_alias}", payload, logger)
+    #     r = send_request(f"{settings.api_url}/update/{settings.project_alias}", payload, logger)
     #     if r is False:
     #         shutil.rmtree(tmp_folder)
     #         return False
@@ -1118,7 +1154,7 @@ def process_image_p(filename, folder_id, raw_files, logfile_folder):
                    'value': check_results,
                    'check_info': check_info.replace(settings.project_datastorage, "")
                    }
-        r = send_request(f"{settings.api_url}/api/update/{settings.project_alias}", payload, logger)
+        r = send_request(f"{settings.api_url}/update/{settings.project_alias}", payload, logger)
         if r is False:
             return False
     if 'tifpages' in project_checks:
@@ -1135,7 +1171,7 @@ def process_image_p(filename, folder_id, raw_files, logfile_folder):
                    'value': check_results,
                    'check_info': check_info
                    }
-        r = send_request(f"{settings.api_url}/api/update/{settings.project_alias}", payload, logger)
+        r = send_request(f"{settings.api_url}/update/{settings.project_alias}", payload, logger)
         if r is False:
             return False
     if 'magick' in project_checks:
@@ -1153,7 +1189,7 @@ def process_image_p(filename, folder_id, raw_files, logfile_folder):
                    'value': check_results,
                    'check_info': check_info.replace(settings.project_datastorage, "")
                    }
-        r = send_request(f"{settings.api_url}/api/update/{settings.project_alias}", payload, logger)
+        r = send_request(f"{settings.api_url}/update/{settings.project_alias}", payload, logger)
         if r is False:
             return False
     if 'tif_compression' in project_checks:
@@ -1169,7 +1205,7 @@ def process_image_p(filename, folder_id, raw_files, logfile_folder):
                    'value': check_results,
                    'check_info': check_info
                    }
-        r = send_request(f"{settings.api_url}/api/update/{settings.project_alias}", payload, logger)
+        r = send_request(f"{settings.api_url}/update/{settings.project_alias}", payload, logger)
         if r is False:
             return False
     # if 'tesseract' in project_checks:
@@ -1190,7 +1226,7 @@ def process_image_p(filename, folder_id, raw_files, logfile_folder):
     #                'value': check_results,
     #                'check_info': check_info
     #                }
-    #     r = send_request(f"{settings.api_url}/api/update/{settings.project_alias}", payload, logger)
+    #     r = send_request(f"{settings.api_url}/update/{settings.project_alias}", payload, logger)
     #     if r is False:
     #         return False
     return folder_id

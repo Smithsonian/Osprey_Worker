@@ -24,7 +24,7 @@ import settings
 # Import helper functions
 from functions import *
 
-ver = "2.10.0"
+ver = "2.11.0"
 
 # Pass an argument in the CLI 'debug'
 if len(sys.argv) == 4:
@@ -93,7 +93,7 @@ def main():
     if not os.path.isdir(settings.project_datastorage):
         logger.error(f"Path not found: {settings.project_datastorage}")
         sys.exit(1)
-    r = requests.get('{}/api/'.format(settings.api_url))
+    r = requests.get(f"{settings.api_url}")
     if r.status_code != 200:
         # Something went wrong
         query_results = r.text.encode('utf-8')
@@ -104,7 +104,7 @@ def main():
         logger.error(f"API version ({system_info['sys_ver']}) does not match this script ({ver})")
         sys.exit(1)
     default_payload = {'api_key': settings.api_key}
-    r = requests.post(f"{settings.api_url}/api/projects/{settings.project_alias}", data=default_payload)
+    r = requests.post(f"{settings.api_url}/projects/{settings.project_alias}", data=default_payload)
     if r.status_code != 200:
         # Something went wrong
         query_results = r.text.encode('utf-8')
@@ -119,7 +119,7 @@ def main():
                    'api_key': settings.api_key,
                    'value': True
                    }
-        r = requests.post(f"{settings.api_url}/api/update/{settings.project_alias}", data=payload)
+        r = requests.post(f"{settings.api_url}/update/{settings.project_alias}", data=payload)
         if r.status_code != 200:
             # Something went wrong
             query_results = r.text.encode('utf-8')

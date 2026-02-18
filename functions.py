@@ -689,7 +689,8 @@ def run_checks_folder_p(project_info, folder_path, logfile_folder, logger):
         md5_files = [settings.main_files, settings.data_files]
     for file in files:
         if Path(file).suffix not in allowed_files:
-            payload = {'type': 'folder', 'folder_id': folder_id, 'api_key': settings.api_key, 'property': 'status1', 'value': 'Extraneous files'}
+            file_suffix = Path(file).suffix
+            payload = {'type': 'folder', 'folder_id': folder_id, 'api_key': settings.api_key, 'property': 'status1', 'value': f'Extraneous files: {file} ({file_suffix} not in {allowed_files})'}
             r = send_request(f"{settings.api_url}/update/{settings.project_alias}", payload, logger)
             if r is False:
                 return False
@@ -959,18 +960,19 @@ def process_image_p(filename, folder_id, raw_files, transcription, logfile_folde
                 file_info = file
                 break
     # File exists, tag if there is a dupe
-    payload = {'type': 'file',
-                'property': 'unique',
-                'folder_id': folder_id,
-                'file_id': file_id,
-                'api_key': settings.api_key,
-                'file_check': 'unique_file',
-                'value': True,
-                'check_info': True
-                }
-    folder_info = send_request(f"{settings.api_url}/update/{settings.project_alias}", payload, logger)
-    if folder_info is False:
-        return False
+    if 'unique_file' in project_checks:
+        payload = {'type': 'file',
+                    'property': 'unique',
+                    'folder_id': folder_id,
+                    'file_id': file_id,
+                    'api_key': settings.api_key,
+                    'file_check': 'unique_file',
+                    'value': True,
+                    'check_info': True
+                    }
+        folder_info = send_request(f"{settings.api_url}/update/{settings.project_alias}", payload, logger)
+        if folder_info is False:
+            return False
     # Check if there is a dupe in another project
     if 'unique_other' in project_checks:
         payload = {'type': 'file',

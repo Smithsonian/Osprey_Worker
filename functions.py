@@ -1035,6 +1035,16 @@ def process_image_p(filename, folder_id, raw_files, transcription, logfile_folde
         if len(paired_files) == 0:
             check_results = 1
             check_info = f"Raw file not found for {filename_stem} ({file_id})"
+            payload = {'type': 'file',
+                    'property': 'filemd5_missing_raw',
+                    'file_id': file_id,
+                    'api_key': settings.api_key,
+                    'filetype': "",
+                    'value': ""
+                    }
+            r = send_request(f"{settings.api_url}/update/{settings.project_alias}", payload, logger)
+            if r is False:
+                return False
         elif len(paired_files) > 1:
             check_results = 1
             check_info = f"{len(paired_files)} raw files found for {filename_stem} ({file_id})"
@@ -1072,18 +1082,6 @@ def process_image_p(filename, folder_id, raw_files, transcription, logfile_folde
                 check_results2 = 0
             if (check_results1 + check_results2) > 0:
                 check_results = 1
-            payload = {'type': 'file',
-                    'property': 'filechecks',
-                    'folder_id': folder_id,
-                    'file_id': file_id,
-                    'api_key': settings.api_key,
-                    'file_check': file_check,
-                    'value': check_results,
-                    'check_info': "{}; {}; {}".format(check_info, res1, res2).replace(settings.project_datastorage, "")
-                    }
-            r = send_request(f"{settings.api_url}/update/{settings.project_alias}", payload, logger)
-            if r is False:
-                return False
             # MD5 of RAW file
             file_md5 = get_filemd5(raw_file, logger)
             if file_md5 is False:
@@ -1114,6 +1112,19 @@ def process_image_p(filename, folder_id, raw_files, transcription, logfile_folde
             r = send_request(f"{settings.api_url}/new/{settings.project_alias}", payload, logger)
             if r is False:
                 return False
+            check_info = f"{check_info}; {res1}; {res2}"
+        payload = {'type': 'file',
+                    'property': 'filechecks',
+                    'folder_id': folder_id,
+                    'file_id': file_id,
+                    'api_key': settings.api_key,
+                    'file_check': file_check,
+                    'value': check_results,
+                    'check_info': f"{check_info}".replace(settings.project_datastorage, "")
+                    }
+        r = send_request(f"{settings.api_url}/update/{settings.project_alias}", payload, logger)
+        if r is False:
+            return False
     if 'jhove' in project_checks:
         file_check = 'jhove'
         check_results, check_info = jhove_validate(main_file_path)

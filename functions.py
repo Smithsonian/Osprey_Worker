@@ -489,17 +489,18 @@ def jpgpreview_zoom(file_id, folder_id, file_path, logger):
                            image_quality=1.0,
                            resize_filter='antialias')
     creator.create(file_path, f"{preview_file_path}/{file_id}.dzi")
-    # logger.info(f"Tar of previews of {file_id} ({preview_file_path})")
-    # try:
-    #     os.chdir(preview_file_path)
-    #     file_prev_folder = f"{file_id}_files"
-    #     tar = tarfile.open(f"{preview_file_path}/{file_id}_files.tar", "w")
-    #     tar.add(file_prev_folder)
-    #     tar.close()
-    #     shutil.rmtree(zoom_folder)
-    # except Exception as e:
-    #     logger.error(f"Error tar for {file_id} ({e})")
-    #     return False
+    if settings.previews == False:
+        logger.info(f"Tar of previews of {file_id} ({preview_file_path})")
+        try:
+            os.chdir(preview_file_path)
+            file_prev_folder = f"{file_id}_files"
+            tar = tarfile.open(f"{preview_file_path}/{file_id}_files.tar", "w")
+            tar.add(file_prev_folder)
+            tar.close()
+            shutil.rmtree(zoom_folder)
+        except Exception as e:
+            logger.error(f"Error tar for {file_id} ({e})")
+            return False
     return True
 
 

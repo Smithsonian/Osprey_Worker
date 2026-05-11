@@ -267,27 +267,37 @@ def sequence_validate(filename, folder_id, project_files):
     return True
 
 
-def tif_compression(file_path):
+def tif_compression(file_path: str) -> tuple:
     """
-    Check if the image has LZW compression
+    Check if a TIFF file uses lossless compression.
+    Returns (0, compression_name) on success, (1, error_message) on failure.
     """
     try:
         img = Image.open(file_path)
     except Exception as e:
         return 1, f"File opening error: {file_path} - {e}"
-    # If tif is in another format, this won't work, mark it as error
-    try:
-        check_info = img.info['compression']
-    except KeyError as e:
-        check_results = 1
-        return check_results, f"Could not find {e}"
-    if check_info == 'tiff_lzw':
-        check_results = 0
-    else:
-        check_results = 1
-    # return True
-    return check_results, check_info
 
+    # Pillow reports compression as a string (e.g., 'tiff_lzw', 'tiff_adobe_deflate')
+    try:
+        comp = img.info['compression']
+    except KeyError:
+        return 1, "Missing compression field in TIFF metadata"
+
+    # Known lossless compression types supported by Pillow
+    # https://pillow.readthedocs.io/en/stable/handbook/concepts.html#formats
+    LOSSLESS_COMPRESSIONS = {
+        'tiff_lzw', 
+        'tiff_adobe_deflate',  # standard deflate
+        'tiff_deflate',        # alias for adobe_deflate in newer Pillow
+        'packbits'             # also known as RLE — lossless
+    }
+
+    # Normalize to set comparison
+    if comp in LOSSLESS_COMPRESSIONS:
+        return 0, comp
+    else:
+        return 1, f"Unsupported (non-lossless) compression: {comp}"
+    
 
 # def check_img_bits(file_path):
 #     """
@@ -333,7 +343,8 @@ def tif_compression(file_path):
 #     return check_results, check_info
 
 
-def tifpages(file_path):
+
+def tifpages(file_path: str) -> Tuple[int, Any]:
     """
     Check if TIF has multiple pages using Pillow
     """
@@ -341,18 +352,19 @@ def tifpages(file_path):
         img = Image.open(file_path)
     except Exception as e:
         return 1, f"File opening error: {file_path} - {e}"
-    # If tif is in another format, this won't work, mark it as error
+
     try:
         no_pages = img.n_frames
-    except AttributeError as e:
-        check_results = 1
-        return check_results, f"{e}"
+    except AttributeError:
+        return 1, "TIFF n_frames attribute not available (not a multi-frame TIFF or corrupted)"
+    
+    # If n_frames == 1 → single-page (valid); >1 → multi-page (may be invalid per project spec)
+    # Decide: should multi-page be an error? For now, assume only single-page is OK:
     if no_pages == 1:
-        check_results = 0
+        return 0, no_pages
     else:
-        check_results = 1
-    # return True
-    return check_results, f"No. of pages: {no_pages}"
+        return 1, f"More than 1 page found in the TIF, found {no_pages}"
+    
 
 
 def get_file_exif(filename):

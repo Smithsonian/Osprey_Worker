@@ -372,7 +372,7 @@ class ImageCreator(object):
 
     def create(self, source, destination):
         """Creates Deep Zoom image from source file and saves it to destination."""
-        self.image = PIL.Image.open(safe_open(source))
+        self.image = PIL.Image.open(source)
         try:
             width, height = self.image.size
             self.descriptor = DeepZoomImageDescriptor(width=width,
@@ -474,11 +474,6 @@ def _remove(path):
 @retry(6)
 def safe_open(path):
     """
-    Safely open a file and return its content as a BytesIO object.
+    Open a file with retries (for flaky NFS). Returns a readable binary file object.
     """
-    try:
-        with open(path, 'rb') as f:
-            return io.BytesIO(f.read())
-    except IOError as e:
-        print(f"Error opening file {path}: {e}")
-        raise
+    return open(path, 'rb')

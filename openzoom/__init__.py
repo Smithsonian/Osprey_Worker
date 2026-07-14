@@ -373,31 +373,34 @@ class ImageCreator(object):
     def create(self, source, destination):
         """Creates Deep Zoom image from source file and saves it to destination."""
         self.image = PIL.Image.open(safe_open(source))
-        width, height = self.image.size
-        self.descriptor = DeepZoomImageDescriptor(width=width,
-                                                  height=height,
-                                                  tile_size=self.tile_size,
-                                                  tile_overlap=self.tile_overlap,
-                                                  tile_format=self.tile_format)
-        # Create tiles
-        image_files = _get_or_create_path(_get_files_path(destination))
-        for level in range(self.descriptor.num_levels):
-            level_dir = _get_or_create_path(os.path.join(image_files, str(level)))
-            level_image = self.get_image(level)
-            for (column, row) in self.tiles(level):
-                bounds = self.descriptor.get_tile_bounds(level, column, row)
-                tile = level_image.crop(bounds)
-                format = self.descriptor.tile_format
-                tile_path = os.path.join(level_dir,
-                                         '{}_{}.{}'.format(column, row, format))
-                with open(tile_path, 'wb') as tile_file:
-                    if self.descriptor.tile_format == 'jpg':
-                        jpeg_quality = int(self.image_quality * 100)
-                        tile.save(tile_file, 'JPEG', quality=jpeg_quality, icc_profile=self.image.info.get('icc_profile'))
-                    else:
-                        tile.save(tile_file, self.descriptor.tile_format.upper(), icc_profile=self.image.info.get('icc_profile'))
-        # Create descriptor
-        self.descriptor.save(destination)
+        try:
+            width, height = self.image.size
+            self.descriptor = DeepZoomImageDescriptor(width=width,
+                                                      height=height,
+                                                      tile_size=self.tile_size,
+                                                      tile_overlap=self.tile_overlap,
+                                                      tile_format=self.tile_format)
+            # Create tiles
+            image_files = _get_or_create_path(_get_files_path(destination))
+            for level in range(self.descriptor.num_levels):
+                level_dir = _get_or_create_path(os.path.join(image_files, str(level)))
+                level_image = self.get_image(level)
+                for (column, row) in self.tiles(level):
+                    bounds = self.descriptor.get_tile_bounds(level, column, row)
+                    tile = level_image.crop(bounds)
+                    format = self.descriptor.tile_format
+                    tile_path = os.path.join(level_dir,
+                                             '{}_{}.{}'.format(column, row, format))
+                    with open(tile_path, 'wb') as tile_file:
+                        if self.descriptor.tile_format == 'jpg':
+                            jpeg_quality = int(self.image_quality * 100)
+                            tile.save(tile_file, 'JPEG', quality=jpeg_quality, icc_profile=self.image.info.get('icc_profile'))
+                        else:
+                            tile.save(tile_file, self.descriptor.tile_format.upper(), icc_profile=self.image.info.get('icc_profile'))
+            # Create descriptor
+            self.descriptor.save(destination)
+        finally:
+            self.image.close()
 
 
 class CollectionCreator(object):
@@ -438,12 +441,12 @@ def retry(attempts, backoff=2):
     def deco_retry(f):
         def f_retry(*args, **kwargs):
             last_exception = None
-            for _ in range(attempts):
+            for attempt in range(attempts):
                 try:
                     return f(*args, **kwargs)
                 except Exception as exception:
                     last_exception = exception
-                    time.sleep(backoff**(attempts + 1))
+                    time.sleep(backoff ** attempt)
             raise last_exception
         return f_retry
     return deco_retry

@@ -1,85 +1,93 @@
 # Alias of the project, must exist in the database already
-project_alias = ""
+project_alias: str = ""        # e.g. "my_project"
 
 
-# Path where the folders are stored
-project_datastorage = ""
+# Path where the folders are stored (no trailing slash)
+project_datastorage: str = ""  # e.g. "/data/ingest"
 
 
 # Are md5 files required to check the files in a folder?
-md5_required = True
-md5_file = ".md5"
+md5_required: bool = True
+md5_file: str = ".md5"
 
 
-# Temp folder, usually /tmp
-# No trailing slash
-tmp_folder = "/tmp"
+# Temp folder, usually /tmp (no trailing slash)
+tmp_folder: str = "/tmp"
 
 
 # File types
-main_files = ".tif"
-raw_files = ".eip"
-data_files = None
+main_files: str = ".tif"
+raw_files: str = ".eip"
+data_files: str | None = None     # e.g. ".xml" — extra allowed file types
 
 
 # API location
-api_url = ""
-api_key = ""
+api_url: str = ""   # e.g. "http://dashboard.example.com/api"
+api_key: str = ""   # API key for the dashboard
 
 
-# How many parallel processes to run 
-no_workers = 2
+# How many parallel processes to run
+num_workers: int = 2
+
+# Max concurrent API POSTs when flushing worker results
+api_workers: int = 8
+
+# Max concurrent Deep Zoom tile pyramids across worker processes (0 = unlimited)
+zoom_workers: int = 4
 
 
-# How to split to parse the date, return the date in format 'YYYY-MM-DD'
-def folder_date(folder_name):
-    # Example as PREFIX-YYYYMMDD
-    folder_date = folder_name.split('PREFIX-')[1]
-    formatted_date = "{}-{}-{}".format(folder_date[0:4], folder_date[4:6], folder_date[6:8])
-    return formatted_date
-
-
-# Validate sequences
-sequence_split = "_"
-sequence = []
-
-
-# Should the names match a db?
-files_db = False
-# How to find the list of valid names
-# this has to be a valid query that will 
-# be used in a subquery
-filename_pattern_query = "SELECT COUNT(*) as no_records FROM (SELECT file_name FROM filename_table WHERE project_id = 100 AND file_name = '{}') a"
-
-
-# How long to sleep between loops
-# Set to False to run only once
-sleep = 180
+# Validate filename sequences. Files are split by sequence_split, and the last
+# segment is checked against this ordered list.
+# e.g. sequence=['a','b','c'] with sequence_split='_' means files named
+# "page_a", "page_b", "page_c" form a valid sequence — missing suffixes are flagged.
+sequence_split: str = "_"
+sequence: list[str] = []
 
 
 # Path for programs in the system
-jhove = "jhove"
-exiftool = "exiftool"
-magick = "identify"
+jhove: str = "jhove"
+exiftool: str = "exiftool"
+identify_path: str = "identify"
 
 
-# Path of where to save the JPG previews and size
-jpg_previews = ""
+# Path of where to save the JPG previews (no trailing slash)
+jpg_previews: str = ""
 # How much space to leave free, in decimal (0.1 is 10%).
 #  If the free space left is less than this, the script will stop.
-jpg_previews_free = 0.1
+jpg_previews_free: float = 0.1
 
 
-# Limit the no of cores for Imagemagick
-magick_limit = 4
+# Max threads for ImageMagick identify (MAGICK_THREAD_LIMIT env var)
+magick_limit: int = 4
 
 
-# Are previews in the same server?
-previews = True
+# Are previews hosted on this machine?
+previews_local: bool = True
+
+# Archive Deep Zoom tiles into a single {file_id}_files.tar and remove the
+#  tiles folder. Only needed in rare cases (e.g. previews served elsewhere);
+#  leave False to keep tiles as regular folders.
+tar_previews: bool = False
+
+# Regenerate previews even when outputs already exist
+regenerate_previews: bool = False
+
+# Generate Deep Zoom (.dzi + tiles) previews for dashboard zoom UI
+deepzoom_previews: bool = False
+
+# Write previews via temp dir then move (True) or in-place under jpg_previews (False)
+preview_staging: bool = False
+
+# Generate full-resolution JPEG at preview base root ({stem}.jpg)
+fullsize_jpg: bool = True
+
+# Log per-phase elapsed times (diagnostic)
+profile_timing: bool = False
 
 
-run_once = True
+# Generate UUIDv4 for file and folder IDs instead of auto-increment integers
+# Set to True when the dashboard API supports UUIDv4 IDs
+uuid_ids: bool = False
 
 
-# Files must contain one of these strings to check with tesseract
-tesseract_pattern = ["label"]
+

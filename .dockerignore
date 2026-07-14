@@ -1,0 +1,12 @@
+.git
+.gitignore
+__pycache__
+*.pyc
+logs/
+*.log
+.venv
+venv/
+settings.py
+.idea
+.vs
+*.code-workspace

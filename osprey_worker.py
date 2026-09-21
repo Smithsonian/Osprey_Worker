@@ -111,6 +111,11 @@ if check_requirements("zip", "zip", logger) is None:
 ############################################
 # Main
 ############################################
+def _major_minor(version):
+    """Return 'major.minor' from a version string, e.g. '3.0.1' -> '3.0'."""
+    return ".".join(str(version).split(".")[:2])
+
+
 def main():
     """
     Main function to validate images in digitization projects.
@@ -123,8 +128,10 @@ def main():
     system_info = send_get(f"{settings.api_url}", logger)
     if system_info is None:
         sys.exit(1)
-    if system_info["sys_ver"] != ver:
-        logger.error(f"API version ({system_info['sys_ver']}) does not match this script ({ver})")
+    # Only major.minor must match; patch releases are compatible
+    api_ver = system_info.get("sys_ver")
+    if api_ver is None or _major_minor(api_ver) != _major_minor(ver):
+        logger.error(f"API version ({api_ver}) is not compatible with this script ({ver}): major.minor must match")
         sys.exit(1)
     default_payload = {"api_key": settings.api_key}
     project_info = send_request(

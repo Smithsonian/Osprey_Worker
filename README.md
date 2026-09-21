@@ -22,6 +22,7 @@ Related repos:
 | Path | Purpose |
 |------|---------|
 | `osprey_worker.py` | Entry point |
+| `regenerate_previews.py` | Regenerate previews for one already-registered folder (see [below](#regenerating-previews-for-one-folder)) |
 | `worker/` | Validation pipeline, API client, previews, validators |
 | `logutil.py` | Main and worker-process logging |
 | `openzoom/` | Deep Zoom tile generation for zoomable previews |
@@ -89,6 +90,46 @@ Logs are written under `logs/`:
  * Parallel file workers: `logs/workers.log`
 
 Logs are zipped automatically when the script exits.
+
+## Regenerating previews for one folder
+
+`regenerate_previews.py` (re)creates the JPG thumbnails, optional full-size JPG, and
+optional Deep Zoom previews for a single folder, without re-running validation checks
+(JHOVE, MD5, sequence, etc.) on it. Use it to fix previews for a folder that has
+already been processed by `osprey_worker.py` — e.g. after a bad Deep Zoom run, or
+after changing `deepzoom_previews`/`fullsize_jpg` in `settings.py`.
+
+```bash
+python regenerate_previews.py [--settings PATH] <folder>
+```
+
+ * `<folder>` — the folder to regenerate, given either as the dashboard folder name
+   (e.g. `20240115_vendorname`) or as a path (relative to `project_datastorage`, or
+   absolute)
+ * `--settings` — path to `settings.py` (default: `$OSPREY_SETTINGS` or `./settings.py`)
+
+Requirements:
+
+ * The folder must already be registered in the dashboard (i.e. `osprey_worker.py`
+   has processed it at least once) — the script looks up its `folder_id` and each
+   file's `file_id` via the dashboard API and does not create new records.
+ * Same Python/package requirements as `osprey_worker.py` (JHOVE/exiftool/ImageMagick
+   are not needed by this script; only Pillow and `requests`).
+
+Behavior:
+
+ * Only files matching `settings.main_files` in the folder (searched recursively) are
+   processed.
+ * Whether existing preview artifacts are rebuilt or left alone follows
+   `settings.regenerate_previews`, exactly like `osprey_worker.py` — set it to `True`
+   in `settings.py` to force a full rebuild, or leave it `False` to only fill in
+   missing/incomplete previews.
+ * Runs in parallel across `settings.num_workers` processes (same as the main
+   pipeline) when greater than 1, otherwise sequentially.
+ * Writes to the same `logs/` folder as `osprey_worker.py` (`logs/{project_alias}_regen_{timestamp}.log`
+   and `logs/workers.log`), zipped on exit.
+ * Exits non-zero if any file's previews failed to generate, or if the folder or any
+   file isn't found in the dashboard.
 
 ## License
 

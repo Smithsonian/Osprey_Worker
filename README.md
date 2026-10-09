@@ -30,7 +30,8 @@ Related repos:
 
 ## Requirements
 
-The program requires a modern version of Linux and Python 3.7 or newer. It has been used with Ubuntu 23 and 
+The program requires a modern version of Linux and Python 3.10 or newer (`settings.py` uses
+`str | None` annotations; MD5 hashing uses `usedforsecurity=False`, 3.9+). It has been used with Ubuntu 23 and 
 RHEL 8. A server running [Osprey](https://github.com/Smithsonian/Osprey) is also required to write the data to.
 
 To install the Python requirements, use pip:
@@ -90,6 +91,34 @@ Logs are written under `logs/`:
  * Parallel file workers: `logs/workers.log`
 
 Logs are zipped automatically when the script exits.
+
+## MD5 verification
+
+When `md5_required` is True, every file matching `main_files` (plus `raw_files` for
+`raw_pair` projects and `data_files` if set) is checked against the folder's sidecar
+file(s) ending in `md5_file` before any per-file processing. Implemented in
+`worker/file_utils.py` (`validate_md5`).
+
+Sidecar format is standard `md5sum` output, one entry per line:
+
+```
+<md5_hex>  <filename>      # text mode
+<md5_hex> *<filename>      # binary mode (md5sum -b, most Windows tools)
+```
+
+ * Only the basename is matched; directory components in the sidecar are ignored.
+ * Blank lines and lines starting with `#` are skipped. Hex case doesn't matter.
+ * The folder fails if: no sidecar exists, a sidecar can't be read, a basename is
+   listed twice, the entry count differs from the file count, a file has no entry,
+   or any digest mismatches.
+
+Hashing runs on the worker pool when `num_workers > 1`, one file per task
+(`imap_unordered`, `chunksize=1`) so large and small files balance across workers.
+Progress is logged on the first, last, and every 10th file. Digests are reused for
+the `filemd5` API updates so files aren't hashed twice.
+
+`hashlib.md5(usedforsecurity=False)` is used so hashing works on FIPS-enabled RHEL,
+where plain `hashlib.md5()` raises `ValueError`.
 
 ## Regenerating previews for one folder
 

@@ -30,7 +30,8 @@ def get_file_exif(filename, exiftool_binary, logger=None):
 
 def hash_file(filepath):
     """Return hex MD5 digest for a file, or None on error."""
-    md5_hash = hashlib.md5()
+    # usedforsecurity=False: integrity check only; required on FIPS-enabled RHEL
+    md5_hash = hashlib.md5(usedforsecurity=False)
     try:
         with open(filepath, "rb") as f:
             for chunk in iter(lambda: f.read(_HASH_CHUNK), b""):
@@ -62,7 +63,8 @@ def build_raw_index(raw_files):
 def _load_expected_md5(md5_files):
     """
     Load sidecar MD5 files into {basename: md5_hex}.
-    Returns (expected, total_entries). Raises ValueError on duplicate basenames.
+    Returns (expected, total_entries). Raises ValueError on duplicate basenames,
+    OSError if a sidecar can't be read.
     """
     expected = {}
     total_entries = 0
@@ -76,7 +78,8 @@ def _load_expected_md5(md5_files):
                 if len(parts) < 2:
                     continue
                 md5_hex, file_ref = parts[0], parts[1]
-                name = Path(file_ref).name
+                # md5sum -b / Windows tools prefix the name with '*' (binary mode)
+                name = Path(file_ref.lstrip('*')).name
                 if name in expected:
                     raise ValueError(f"Duplicate MD5 entry for filename: {name}")
                 expected[name] = md5_hex.upper()
@@ -91,8 +94,14 @@ def _md5_check_one(filepath, expected_md5):
     digest = hash_file(filepath)
     if digest is None:
         return filepath, 1, None
-    ok = 0 if digest.upper() == expected_md5.upper() else 1
+    # expected_md5 is already uppercased by _load_expected_md5
+    ok = 0 if digest.upper() == expected_md5 else 1
     return filepath, ok, digest
+
+
+def _md5_check_star(args):
+    """Unpack (filepath, expected_md5) for imap_unordered; top-level so it pickles."""
+    return _md5_check_one(*args)
 
 
 def validate_md5(md5_files, files, pool=None, logger=None):
@@ -104,6 +113,8 @@ def validate_md5(md5_files, files, pool=None, logger=None):
         expected_by_name, total_entries = _load_expected_md5(md5_files)
     except ValueError as e:
         return 1, str(e), None
+    except OSError as e:
+        return 1, f"Cannot read MD5 file: {e}", None
 
     if len(files) != total_entries:
         return 1, (
@@ -119,26 +130,27 @@ def validate_md5(md5_files, files, pool=None, logger=None):
 
     total = len(files)
 
-    def _log_md5_progress(done):
+    def _log_md5_progress(done, filepath):
+        # Log first, last, and every 10th completed file
         if logger is None or total == 0:
             return
         if done == 1 or done == total or done % 10 == 0:
-            name = Path(files[done - 1]).name
-            msg = f"MD5 check {done}/{total}: {name}"
+            msg = f"MD5 check {done}/{total}: {Path(filepath).name}"
             logger.info(msg)
             print(msg)
 
+    tasks = list(zip(files, expected_for_files))
     if pool is None:
-        results = []
-        for i, (f, e) in enumerate(zip(files, expected_for_files), start=1):
-            results.append(_md5_check_one(f, e))
-            _log_md5_progress(i)
+        results_iter = map(_md5_check_star, tasks)
     else:
-        if logger is not None:
-            msg = f"MD5 check: hashing {total} files in parallel..."
-            logger.info(msg)
-            print(msg)
-        results = pool.starmap(_md5_check_one, zip(files, expected_for_files))
+        # chunksize=1: hand out one file at a time so uneven file sizes balance
+        # across workers; results arrive in completion order
+        results_iter = pool.imap_unordered(_md5_check_star, tasks, chunksize=1)
+
+    results = []
+    for i, res in enumerate(results_iter, start=1):
+        results.append(res)
+        _log_md5_progress(i, res[0])
 
     bad = sum(r[1] for r in results)
     digests = {r[0]: r[2] for r in results if r[2] is not None}

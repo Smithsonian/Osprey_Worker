@@ -1,4 +1,3 @@
-import os
 import hashlib
 import subprocess
 from pathlib import Path
@@ -39,18 +38,6 @@ def hash_file(filepath):
     except OSError:
         return None
     return md5_hash.hexdigest()
-
-
-def get_filemd5(filepath, logger):
-    """
-    Get MD5 hash of a file
-    """
-    if not os.path.isfile(filepath):
-        return False
-    digest = hash_file(filepath)
-    if digest is None:
-        return False
-    return digest
 
 
 def build_raw_index(raw_files):

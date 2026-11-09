@@ -92,6 +92,31 @@ Logs are written under `logs/`:
 
 Logs are zipped automatically when the script exits.
 
+## Preview encoding and bit depth
+
+JPEG holds only 8-bit grayscale or 8-bit 3-channel data, so sources in other
+modes are converted before the thumbnails, full-size JPEG and Deep Zoom tiles
+are written (`normalize_for_jpeg` in `worker/previews.py`):
+
+ * **16-bit grayscale** (Pillow mode `I;16`, `I;16B`, `I;16L`, `I;16N` or `I`)
+   is rescaled from 0–65535 to 0–255. Converting these straight to `L`/`RGB`
+   *clips* at 255 rather than rescaling, which turned a full-range scan into an
+   almost entirely white image with no error reported, and made Deep Zoom fail
+   with `cannot write mode I;16 as JPEG`.
+ * **16-bit RGB and RGBA** TIFFs need no special handling — Pillow already
+   scales them to 8-bit channels when the file is opened.
+ * **Floating-point** samples (mode `F`) have no canonical range and are scaled
+   from the actual minimum and maximum present in the image.
+ * **Palette, CMYK, LAB, RGBA, LA, 1-bit and YCbCr** are converted with
+   Pillow's `convert()`. Conversion happens *before* resizing, since resampling
+   a palette image interpolates palette indices rather than colours.
+ * The source ICC profile is embedded in the output, except when the colour
+   space changed (CMYK and LAB sources), where it no longer describes the
+   pixels and is dropped.
+
+A line is written to the worker log whenever a file's mode is rescaled, so
+conversions are visible in `logs/workers.log`.
+
 ## MD5 verification
 
 When `md5_required` is True, every file matching `main_files` (plus `raw_files` for

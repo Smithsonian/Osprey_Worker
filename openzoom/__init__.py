@@ -39,19 +39,11 @@
 import math
 import os
 import PIL.Image
-import shutil
-import io
-import sys
-import time
-import warnings
 import xml.dom.minidom
-
-from collections import deque
 
 
 NS_DEEPZOOM = 'http://schemas.microsoft.com/deepzoom/2008'
 
-DEFAULT_RESIZE_FILTER = PIL.Image.LANCZOS
 DEFAULT_IMAGE_FORMAT = 'jpg'
 
 RESIZE_FILTERS = {
@@ -78,17 +70,6 @@ class DeepZoomImageDescriptor(object):
         self.tile_format = tile_format
         self._num_levels = None
 
-    def open(self, source):
-        """Intialize descriptor from an existing descriptor file."""
-        doc = xml.dom.minidom.parse(safe_open(source))
-        image = doc.getElementsByTagName('Image')[0]
-        size = doc.getElementsByTagName('Size')[0]
-        self.width = int(size.getAttribute('Width'))
-        self.height = int(size.getAttribute('Height'))
-        self.tile_size = int(image.getAttribute('TileSize'))
-        self.tile_overlap = int(image.getAttribute('Overlap'))
-        self.tile_format = image.getAttribute('Format')
-
     def save(self, destination):
         """Save descriptor file."""
         with open(destination, 'w') as f:
@@ -105,11 +86,6 @@ class DeepZoomImageDescriptor(object):
             doc.appendChild(image)
             descriptor = doc.toxml()
             f.write(descriptor)
-
-    @classmethod
-    def remove(self, filename):
-        """Remove descriptor file (DZI) and tiles folder."""
-        _remove(filename)
 
     @property
     def num_levels(self):
@@ -155,192 +131,6 @@ class DeepZoomImageDescriptor(object):
         return (x, y, x + w, y + h)
 
 
-class DeepZoomCollection(object):
-    def __init__(self, filename, image_quality=0.8, max_level=7,
-                tile_size=256, tile_format='jpg', items=[]):
-        self.source = filename
-        self.image_quality = image_quality
-        self.tile_size = tile_size
-        self.max_level = max_level
-        self.tile_format = tile_format
-        self.items = deque(items)
-        self.next_item_id = len(self.items)
-        # XML
-        self.doc = xml.dom.minidom.Document()
-        collection = self.doc.createElementNS(NS_DEEPZOOM, 'Collection')
-        collection.setAttribute('xmlns', NS_DEEPZOOM)
-        collection.setAttribute('MaxLevel', str(self.max_level))
-        collection.setAttribute('TileSize', str(self.tile_size))
-        collection.setAttribute('Format', str(self.tile_format))
-        collection.setAttribute('Quality', str(self.image_quality))
-        items = self.doc.createElementNS(NS_DEEPZOOM, 'Items')
-        collection.appendChild(items)
-        collection.setAttribute('NextItemId', str(self.next_item_id))
-        self.doc.appendChild(collection)
-
-    @classmethod
-    def from_file(self, filename):
-        """Open collection descriptor."""
-        doc = xml.dom.minidom.parse(safe_open(filename))
-        collection = doc.getElementsByTagName('Collection')[0]
-        image_quality = float(collection.getAttribute('Quality'))
-        max_level = int(collection.getAttribute('MaxLevel'))
-        tile_size = int(collection.getAttribute('TileSize'))
-        tile_format = collection.getAttribute('Format')
-        items = [DeepZoomCollectionItem.from_xml(item) for item
-                    in doc.getElementsByTagName('I')]
-
-        collection = DeepZoomCollection(filename,
-                                        image_quality=image_quality,
-                                        max_level=max_level,
-                                        tile_size=tile_size,
-                                        tile_format=tile_format,
-                                        items=items)
-        return collection
-
-
-    @classmethod
-    def remove(self, filename):
-        """Remove collection file (DZC) and tiles folder."""
-        _remove(filename)
-
-    def append(self, source):
-        descriptor = DeepZoomImageDescriptor()
-        descriptor.open(source)
-        item = DeepZoomCollectionItem(source, descriptor.width, descriptor.height,
-                                     id=self.next_item_id)
-        self.items.append(item)
-        self.next_item_id += 1
-
-    def save(self, pretty_print_xml=False):
-        """Save collection descriptor."""
-        collection = self.doc.getElementsByTagName('Collection')[0]
-        items = self.doc.getElementsByTagName('Items')[0]
-        while len(self.items) > 0:
-            item = self.items.popleft()
-            i = self.doc.createElementNS(NS_DEEPZOOM, 'I')
-            i.setAttribute('Id', str(item.id))
-            i.setAttribute('N', str(item.id))
-            i.setAttribute('Source', item.source)
-            # Size
-            size = self.doc.createElementNS(NS_DEEPZOOM, 'Size')
-            size.setAttribute('Width', str(item.width))
-            size.setAttribute('Height', str(item.height))
-            i.appendChild(size)
-            items.appendChild(i)
-            self._append_image(item.source, item.id)
-        collection.setAttribute('NextItemId', str(self.next_item_id))
-        with open(self.source, 'w') as f:
-            if pretty_print_xml:
-                xml = self.doc.toprettyxml(encoding='UTF-8')
-            else:
-                xml = self.doc.toxml(encoding='UTF-8')
-            f.write(xml)
-
-    def _append_image(self, path, i):
-        descriptor = DeepZoomImageDescriptor()
-        descriptor.open(path)
-        files_path = _get_or_create_path(_get_files_path(self.source))
-        for level in reversed(range(self.max_level + 1)):
-            level_path = _get_or_create_path('{}/{}'.format(files_path, level))
-            level_size = 2**level
-            images_per_tile = int(math.floor(self.tile_size / level_size))
-            column, row = self.get_tile_position(i, level, self.tile_size)
-            tile_path = '{}/{}_{}.{}'.format(level_path, column, row, self.tile_format)
-            if not os.path.exists(tile_path):
-                tile_image = PIL.Image.new('RGB', (self.tile_size, self.tile_size))
-                q = int(self.image_quality * 100)
-                tile_image.save(tile_path, 'JPEG', quality=q, icc_profile=self.image.info.get('icc_profile'))
-            tile_image = PIL.Image.open(tile_path)
-            source_path = '{}/{}/{}_{}.{}'.format(_get_files_path(path), level, 0, 0,
-                                            descriptor.tile_format)
-            # Local
-            if os.path.exists(source_path):
-                try:
-                    source_image = PIL.Image.open(safe_open(source_path))
-                    source_image_profile=source_image.info.get('icc_profile')
-                except IOError:
-                    warnings.warn('Skipped invalid level: {}'.format(source_path))
-                    continue
-            # Remote
-            else:
-                if level == self.max_level:
-                    try:
-                        source_image = PIL.Image.open(safe_open(source_path))
-                        source_image_profile=source_image.info.get('icc_profile')
-                    except IOError:
-                        warnings.warn('Skipped invalid image: {}'.format(source_path))
-                        return
-                    # Expected width & height of the tile
-                    e_w, e_h = descriptor.get_dimensions(level)
-                    # Actual width & height of the tile
-                    w, h = source_image.size
-                    # Correct tile because of IIP bug where low-level tiles
-                    # have wrong dimensions (they are too large)
-                    if w != e_w or h != e_h:
-                        # Resize incorrect tile to correct size
-                        source_image = source_image.resize((e_w, e_h), PIL.Image.LANCZOS)
-                        # Store new dimensions
-                        w, h = e_w, e_h
-                else:
-                    w = int(math.ceil(w * 0.5))
-                    h = int(math.ceil(h * 0.5))
-                    source_image.thumbnail((w, h), PIL.Image.LANCZOS, icc_profile=source_image_profile)
-            column, row = self.get_position(i)
-            x = (column % images_per_tile) * level_size
-            y = (row % images_per_tile) * level_size
-            tile_image.paste(source_image, (x, y))
-            tile_image.save(tile_path, icc_profile=source_image_profile)
-
-    def get_position(self, z_order):
-        """Returns position (column, row) from given Z-order (Morton number.)"""
-        column = 0
-        row = 0
-        for i in range(0, 32, 2):
-            offset = i / 2
-            # column
-            column_offset = i
-            column_mask = 1 << column_offset
-            column_value = (z_order & column_mask) >> column_offset
-            column |= column_value << offset
-            #row
-            row_offset = i + 1
-            row_mask = 1 << row_offset
-            row_value = (z_order & row_mask) >> row_offset
-            row |= row_value << offset
-        return int(column), int(row)
-
-    def get_z_order(self, column, row):
-        """Returns the Z-order (Morton number) from given position."""
-        z_order = 0
-        for i in range(32):
-            z_order |= (column & 1 << i) << i | (row & 1 << i) << (i + 1)
-        return z_order
-
-    def get_tile_position(self, z_order, level, tile_size):
-        level_size = 2**level
-        x, y = self.get_position(z_order)
-        return (int(math.floor((x * level_size) / tile_size)),
-                int(math.floor((y * level_size) / tile_size)))
-
-
-class DeepZoomCollectionItem(object):
-    def __init__(self, source, width, height, id=0):
-        self.id = id
-        self.source = source
-        self.width = width
-        self.height = height
-
-    @classmethod
-    def from_xml(cls, xml):
-        id = int(xml.getAttribute('Id'))
-        source = xml.getAttribute('Source')
-        size = xml.getElementsByTagName('Size')[0]
-        width = int(size.getAttribute('Width'))
-        height = int(size.getAttribute('Height'))
-        return DeepZoomCollectionItem(source, width, height, id)
-
-
 class ImageCreator(object):
     """Creates Deep Zoom images."""
     def __init__(self, tile_size=254, tile_overlap=1, tile_format='jpg',
@@ -370,9 +160,16 @@ class ImageCreator(object):
         columns, rows = self.descriptor.get_num_tiles(level)
         return [(column, row) for column in range(columns) for row in range(rows)]
 
-    def create(self, source, destination):
-        """Creates Deep Zoom image from source file and saves it to destination."""
-        self.image = PIL.Image.open(source)
+    def create(self, source, destination, image=None):
+        """Creates Deep Zoom image from source file and saves it to destination.
+
+        If image is given, it is used instead of opening source and the caller
+        keeps ownership of it (it is not closed here). Pass an image in a mode
+        the tile format can encode -- Pillow cannot write modes such as I;16
+        (16-bit grayscale) as JPEG.
+        """
+        owns_image = image is None
+        self.image = PIL.Image.open(source) if owns_image else image
         try:
             width, height = self.image.size
             self.descriptor = DeepZoomImageDescriptor(width=width,
@@ -382,6 +179,7 @@ class ImageCreator(object):
                                                       tile_format=self.tile_format)
             # Create tiles
             image_files = _get_or_create_path(_get_files_path(destination))
+            icc_profile = self.image.info.get('icc_profile')
             for level in range(self.descriptor.num_levels):
                 level_dir = _get_or_create_path(os.path.join(image_files, str(level)))
                 level_image = self.get_image(level)
@@ -394,62 +192,17 @@ class ImageCreator(object):
                     with open(tile_path, 'wb') as tile_file:
                         if self.descriptor.tile_format == 'jpg':
                             jpeg_quality = int(self.image_quality * 100)
-                            tile.save(tile_file, 'JPEG', quality=jpeg_quality, icc_profile=self.image.info.get('icc_profile'))
+                            tile.save(tile_file, 'JPEG', quality=jpeg_quality, icc_profile=icc_profile)
                         else:
-                            tile.save(tile_file, self.descriptor.tile_format.upper(), icc_profile=self.image.info.get('icc_profile'))
+                            tile.save(tile_file, self.descriptor.tile_format.upper(), icc_profile=icc_profile)
             # Create descriptor
             self.descriptor.save(destination)
         finally:
-            self.image.close()
+            if owns_image:
+                self.image.close()
 
-
-class CollectionCreator(object):
-    """Creates Deep Zoom collections."""
-    def __init__(self, image_quality=0.8, tile_size=256,
-                 max_level=7, tile_format='jpg', copy_metadata=False):
-        self.image_quality = image_quality
-        self.tile_size = tile_size
-        self.max_level = max_level
-        self.tile_format = tile_format
-        # TODO
-        self.copy_metadata = copy_metadata
-
-    def create(self, images, destination):
-        """Creates a Deep Zoom collection from a list of images."""
-        collection = DeepZoomCollection(destination,
-                                        image_quality=self.image_quality,
-                                        max_level=self.max_level,
-                                        tile_size=self.tile_size,
-                                        tile_format=self.tile_format)
-        for image in images:
-            collection.append(image)
-        collection.save()
 
 ################################################################################
-
-def retry(attempts, backoff=2):
-    """Retries a function or method until it returns or
-    the number of attempts has been reached."""
-
-    if backoff <= 1:
-        raise ValueError('backoff must be greater than 1')
-
-    attempts = int(math.floor(attempts))
-    if attempts < 0:
-        raise ValueError('attempts must be 0 or greater')
-
-    def deco_retry(f):
-        def f_retry(*args, **kwargs):
-            last_exception = None
-            for attempt in range(attempts):
-                try:
-                    return f(*args, **kwargs)
-                except Exception as exception:
-                    last_exception = exception
-                    time.sleep(backoff ** attempt)
-            raise last_exception
-        return f_retry
-    return deco_retry
 
 def _get_or_create_path(path):
     if not os.path.exists(path):
@@ -465,15 +218,3 @@ def _clamp(val, min, max):
 
 def _get_files_path(path):
     return os.path.splitext(path)[0] + '_files'
-
-def _remove(path):
-    os.remove(path)
-    tiles_path = _get_files_path(path)
-    shutil.rmtree(tiles_path)
-
-@retry(6)
-def safe_open(path):
-    """
-    Open a file with retries (for flaky NFS). Returns a readable binary file object.
-    """
-    return open(path, 'rb')

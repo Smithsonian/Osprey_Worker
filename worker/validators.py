@@ -6,10 +6,6 @@ import xmltodict
 from pathlib import Path
 from PIL import Image
 
-import logging
-
-from worker.api import send_request
-
 
 def jhove_validate(file_path, jhove_binary, tmp_folder, max_retries=3):
     suffix = Path(file_path).suffix.lower()
@@ -158,43 +154,6 @@ def check_sequence(filename, project_files, sequence, sequence_split, project_fi
     check_results = 1
     check_info = "Next file in sequence was not found"
     return (file_id, check_results, check_info)
-
-
-def sequence_validate(filename, folder_id, project_files, logger=None):
-    """
-    Validate sequence and post result to the API (standalone / backward-compatible).
-    The main pipeline uses check_sequence() inside process_image_worker instead.
-    """
-    import settings
-    if logger is None:
-        logger = logging.getLogger("osprey.worker")
-    _, check_results, check_info = check_sequence(
-        filename, project_files, settings.sequence, settings.sequence_split
-    )
-    payload = {
-        'type': 'file',
-        'property': 'filechecks',
-        'folder_id': folder_id,
-        'file_id': _sequence_file_id(filename, project_files),
-        'api_key': settings.api_key,
-        'file_check': 'sequence',
-        'value': check_results,
-        'check_info': check_info,
-    }
-    query_results = send_request(
-        f"{settings.api_url}/update/{settings.project_alias}", payload, logger
-    )
-    if query_results is None or not query_results.get("result"):
-        return False
-    return check_results == 0
-
-
-def _sequence_file_id(filename, project_files):
-    filename_stem = Path(filename).stem
-    for file in project_files:
-        if file['file_name'] == filename_stem:
-            return file['file_id']
-    return None
 
 
 def tif_compression(file_path: str = None, img=None) -> tuple:
